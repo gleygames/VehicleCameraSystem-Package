@@ -1,0 +1,25 @@
+{
+    "name": "Gley.CameraSystem.Input",
+    "rootNamespace": "Gley.CameraSystem.Input",
+    "references": [
+        "Gley.CameraSystem",
+        "Unity.InputSystem"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "GLEY_CAMERA_SYSTEM_INPUT_SYSTEM"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.inputsystem",
+            "expression": "1.0.0",
+            "define": "GLEY_CAMERA_SYSTEM_INPUT_SYSTEM"
+        }
+    ],
+    "noEngineReferences": false
+}

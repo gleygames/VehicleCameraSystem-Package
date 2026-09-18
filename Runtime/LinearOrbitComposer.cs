@@ -1,0 +1,903 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace Gley.CameraSystem
+{
+    internal class LinearOrbitComposer
+    {
+        private const float MinimumLength = 0.0001f;
+        private const float NormalSamplingDistance = 0.01f;
+        private const float PlanarTolerance = 0.0001f;
+        private const int SamplesPerSegment = 32;
+
+        private readonly List<OrbitArcLengthSample> samples = new List<OrbitArcLengthSample>();
+        private readonly List<RetainedLeadSegmentMapping> retainedLeadSegmentMappings = new List<RetainedLeadSegmentMapping>();
+        private readonly List<AssembledOrbitSegmentSource> segmentSources = new List<AssembledOrbitSegmentSource>();
+        private readonly List<AssembledBezierOrbitSegment> segments = new List<AssembledBezierOrbitSegment>();
+        private readonly List<ClosedBezierOrbit> sourceOrbits = new List<ClosedBezierOrbit>();
+        private readonly IReadOnlyList<GeneratedOrbitConnectorPair> connectorPairs;
+        private readonly IReadOnlyList<Vector3> bodyOffsets;
+        private readonly IReadOnlyList<VehicleProfile> bodyProfiles;
+
+        private float leadOrbitLength;
+        private float retainedLeadStartDistance;
+
+        public IReadOnlyList<AssembledBezierOrbitSegment> Segments => segments;
+
+        public LinearOrbitComposerAssemblyResult AssemblyResult { get; private set; }
+        public float Length { get; private set; }
+        public bool HasValidWatchMarkers => AreWatchMarkersValid();
+        public bool IsClosed => AssemblyResult == LinearOrbitComposerAssemblyResult.Valid;
+
+        public LinearOrbitComposer(IReadOnlyList<VehicleProfile> profiles, IReadOnlyList<Vector3> offsets, IReadOnlyList<GeneratedOrbitConnectorPair> generatedConnectorPairs)
+        {
+            bodyProfiles = profiles;
+            bodyOffsets = offsets;
+            connectorPairs = generatedConnectorPairs;
+            CreateSourceOrbits();
+            Rebuild();
+        }
+
+        public Vector3 EvaluateLeadBodyLocalPosition(float distance)
+        {
+            int segmentIndex;
+            float segmentT;
+
+            if (!IsClosed || !TryGetOrbitSegmentPosition(distance, out segmentIndex, out segmentT))
+            {
+                return Vector3.zero;
+            }
+
+            return segments[segmentIndex].EvaluatePosition(segmentT);
+        }
+
+        public Vector3 EvaluateWorldPosition(Transform leadBody, float distance)
+        {
+            return leadBody.TransformPoint(EvaluateLeadBodyLocalPosition(distance));
+        }
+
+        public Vector3 EvaluateLeadBodyLocalInwardNormal(float distance)
+        {
+            if (!IsClosed || Length <= 0f)
+            {
+                return Vector3.zero;
+            }
+
+            Vector3 tangent = EvaluateLeadBodyLocalPosition(distance + NormalSamplingDistance) - EvaluateLeadBodyLocalPosition(distance - NormalSamplingDistance);
+
+            if (tangent.sqrMagnitude < MinimumLength)
+            {
+                return Vector3.zero;
+            }
+
+            Vector3 planeNormal = bodyProfiles[0].VehicleOrbit.OrientationAdjustment * Vector3.up;
+            Vector3 inwardNormal = Vector3.Cross(tangent.normalized, planeNormal);
+
+            if (CalculateSignedArea() < 0f)
+            {
+                inwardNormal = Vector3.Cross(planeNormal, tangent.normalized);
+            }
+
+            return inwardNormal;
+        }
+
+        public Vector3 EvaluateLeadBodyLocalWatchPoint(float distance)
+        {
+            int segmentIndex;
+            float segmentT;
+
+            if (!IsClosed || !HasValidWatchMarkers || !TryGetOrbitSegmentPosition(distance, out segmentIndex, out segmentT))
+            {
+                return Vector3.zero;
+            }
+
+            AssembledOrbitSegmentSource segmentSource = segmentSources[segmentIndex];
+
+            if (segmentSource != null)
+            {
+                return EvaluateSourceWatchPoint(segmentSource, segmentT);
+            }
+
+            return EvaluateConnectorWatchPoint(segmentIndex, segmentT);
+        }
+
+        public bool TryGetRetainedLeadOrbitDistance(float leadOrbitDistance, out float combinedOrbitDistance)
+        {
+            combinedOrbitDistance = 0f;
+
+            if (!IsClosed || retainedLeadSegmentMappings.Count == 0 || leadOrbitLength <= 0f)
+            {
+                return false;
+            }
+
+            float wrappedLeadDistance = Mathf.Repeat(leadOrbitDistance, leadOrbitLength);
+
+            if (wrappedLeadDistance < retainedLeadStartDistance)
+            {
+                wrappedLeadDistance += leadOrbitLength;
+            }
+
+            for (int mappingIndex = 0; mappingIndex < retainedLeadSegmentMappings.Count; mappingIndex++)
+            {
+                RetainedLeadSegmentMapping mapping = retainedLeadSegmentMappings[mappingIndex];
+
+                if (wrappedLeadDistance >= mapping.SourceStartDistance - MinimumLength && wrappedLeadDistance <= mapping.SourceEndDistance + MinimumLength)
+                {
+                    float sourceSegmentDistance = wrappedLeadDistance - mapping.SourceSegmentStartDistance;
+                    float sourceSegmentT = GetSegmentParameter(mapping.SourceSegment, sourceSegmentDistance);
+                    float assembledSegmentT = (sourceSegmentT - mapping.SourceStartT) / (mapping.SourceEndT - mapping.SourceStartT);
+                    combinedOrbitDistance = GetAssembledSegmentDistance(mapping.AssembledSegmentIndex, Mathf.Clamp01(assembledSegmentT));
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public bool TryGetRetainedLeadSourceOrbitDistance(float combinedOrbitDistance, out float leadOrbitDistance)
+        {
+            leadOrbitDistance = 0f;
+
+            if (!IsClosed || retainedLeadSegmentMappings.Count == 0 || leadOrbitLength <= 0f)
+            {
+                return false;
+            }
+
+            int assembledSegmentIndex;
+            float assembledSegmentT;
+
+            if (!TryGetOrbitSegmentPosition(combinedOrbitDistance, out assembledSegmentIndex, out assembledSegmentT))
+            {
+                return false;
+            }
+
+            for (int mappingIndex = 0; mappingIndex < retainedLeadSegmentMappings.Count; mappingIndex++)
+            {
+                RetainedLeadSegmentMapping mapping = retainedLeadSegmentMappings[mappingIndex];
+
+                if (mapping.AssembledSegmentIndex == assembledSegmentIndex)
+                {
+                    float sourceSegmentT = Mathf.Lerp(mapping.SourceStartT, mapping.SourceEndT, assembledSegmentT);
+                    leadOrbitDistance = mapping.SourceSegmentStartDistance + GetSourceSegmentDistance(mapping.SourceSegment, sourceSegmentT);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public void Rebuild()
+        {
+            RebuildSourceOrbits();
+            samples.Clear();
+            retainedLeadSegmentMappings.Clear();
+            segmentSources.Clear();
+            segments.Clear();
+            Length = 0f;
+            leadOrbitLength = 0f;
+            retainedLeadStartDistance = 0f;
+            AssemblyResult = LinearOrbitComposerAssemblyResult.NotAssembled;
+
+            if (!HasValidInputs())
+            {
+                AssemblyResult = LinearOrbitComposerAssemblyResult.ConnectorGenerationFailed;
+                return;
+            }
+
+            AddLeadRetainedSegments();
+
+            for (int connectorIndex = 0; connectorIndex < connectorPairs.Count; connectorIndex++)
+            {
+                AddConnector(connectorPairs[connectorIndex].RightConnector);
+                int bodyIndex = connectorIndex + 1;
+
+                if (bodyIndex < bodyProfiles.Count - 1)
+                {
+                    AddMiddleRightSide(bodyIndex);
+                }
+                else
+                {
+                    AddRetainedSectionComplement(bodyIndex, OrbitAttachmentEnd.Front, false);
+                }
+            }
+
+            for (int connectorIndex = connectorPairs.Count - 1; connectorIndex >= 0; connectorIndex--)
+            {
+                AddReversedConnector(connectorPairs[connectorIndex].LeftConnector);
+
+                if (connectorIndex > 0)
+                {
+                    AddMiddleLeftSide(connectorIndex);
+                }
+            }
+
+            if (!AreSegmentEndpointsConnected())
+            {
+                AssemblyResult = LinearOrbitComposerAssemblyResult.Disconnected;
+                return;
+            }
+
+            if (!AreSegmentsPlanar())
+            {
+                AssemblyResult = LinearOrbitComposerAssemblyResult.NonPlanar;
+                return;
+            }
+
+            BuildArcLengthSamples();
+
+            if (Length < MinimumLength)
+            {
+                AssemblyResult = LinearOrbitComposerAssemblyResult.Degenerate;
+                return;
+            }
+
+            if (HasSelfIntersection())
+            {
+                AssemblyResult = LinearOrbitComposerAssemblyResult.SelfIntersecting;
+                return;
+            }
+
+            AssemblyResult = LinearOrbitComposerAssemblyResult.Valid;
+        }
+
+        private void CreateSourceOrbits()
+        {
+            sourceOrbits.Clear();
+
+            if (bodyProfiles == null)
+            {
+                return;
+            }
+
+            for (int profileIndex = 0; profileIndex < bodyProfiles.Count; profileIndex++)
+            {
+                VehicleProfile profile = bodyProfiles[profileIndex];
+
+                if (profile == null || profile.VehicleOrbit == null)
+                {
+                    sourceOrbits.Add(null);
+                }
+                else
+                {
+                    sourceOrbits.Add(new ClosedBezierOrbit(profile.VehicleOrbit));
+                }
+            }
+        }
+
+        private void RebuildSourceOrbits()
+        {
+            for (int orbitIndex = 0; orbitIndex < sourceOrbits.Count; orbitIndex++)
+            {
+                if (sourceOrbits[orbitIndex] != null)
+                {
+                    sourceOrbits[orbitIndex].Rebuild();
+                }
+            }
+        }
+
+        private bool HasValidInputs()
+        {
+            if (bodyProfiles == null || bodyOffsets == null || connectorPairs == null || bodyProfiles.Count < 2 || bodyOffsets.Count != bodyProfiles.Count || connectorPairs.Count != bodyProfiles.Count - 1 || sourceOrbits.Count != bodyProfiles.Count)
+            {
+                return false;
+            }
+
+            for (int bodyIndex = 0; bodyIndex < bodyProfiles.Count; bodyIndex++)
+            {
+                if (bodyProfiles[bodyIndex] == null || bodyProfiles[bodyIndex].VehicleOrbit == null || sourceOrbits[bodyIndex] == null)
+                {
+                    return false;
+                }
+            }
+
+            for (int connectorIndex = 0; connectorIndex < connectorPairs.Count; connectorIndex++)
+            {
+                if (connectorPairs[connectorIndex] == null || connectorPairs[connectorIndex].LeftConnector == null || connectorPairs[connectorIndex].RightConnector == null)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool AreWatchMarkersValid()
+        {
+            for (int orbitIndex = 0; orbitIndex < sourceOrbits.Count; orbitIndex++)
+            {
+                if (sourceOrbits[orbitIndex] == null || sourceOrbits[orbitIndex].WatchMarkerValidationResult != OrbitWatchMarkerValidationResult.Valid)
+                {
+                    return false;
+                }
+            }
+
+            return sourceOrbits.Count > 0;
+        }
+
+        private bool TryGetOrbitSegmentPosition(float distance, out int segmentIndex, out float segmentT)
+        {
+            segmentIndex = 0;
+            segmentT = 0f;
+
+            if (Length <= 0f || samples.Count == 0)
+            {
+                return false;
+            }
+
+            float wrappedDistance = Mathf.Repeat(distance, Length);
+
+            for (int sampleIndex = 1; sampleIndex < samples.Count; sampleIndex++)
+            {
+                OrbitArcLengthSample previousSample = samples[sampleIndex - 1];
+                OrbitArcLengthSample currentSample = samples[sampleIndex];
+
+                if (wrappedDistance <= currentSample.Distance)
+                {
+                    float sampleDistance = currentSample.Distance - previousSample.Distance;
+
+                    if (sampleDistance <= 0f)
+                    {
+                        return false;
+                    }
+
+                    segmentIndex = currentSample.SegmentIndex;
+                    segmentT = Mathf.Lerp(previousSample.SegmentT, currentSample.SegmentT, (wrappedDistance - previousSample.Distance) / sampleDistance);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private Vector3 EvaluateSourceWatchPoint(AssembledOrbitSegmentSource segmentSource, float segmentT)
+        {
+            float sourceSegmentT = Mathf.Lerp(segmentSource.SourceStartT, segmentSource.SourceEndT, segmentT);
+            float sourceOrbitDistance = segmentSource.SourceSegmentStartDistance + GetSourceSegmentDistance(segmentSource.SourceSegment, sourceSegmentT);
+            return segmentSource.SourceOrbit.EvaluateBodyLocalWatchPoint(sourceOrbitDistance) + segmentSource.PositionOffset;
+        }
+
+        private Vector3 EvaluateConnectorWatchPoint(int segmentIndex, float segmentT)
+        {
+            AssembledOrbitSegmentSource previousSegmentSource = GetPreviousSegmentSource(segmentIndex);
+            AssembledOrbitSegmentSource nextSegmentSource = GetNextSegmentSource(segmentIndex);
+
+            if (previousSegmentSource == null || nextSegmentSource == null)
+            {
+                return Vector3.zero;
+            }
+
+            return Vector3.Lerp(EvaluateSourceWatchPoint(previousSegmentSource, 1f), EvaluateSourceWatchPoint(nextSegmentSource, 0f), segmentT);
+        }
+
+        private AssembledOrbitSegmentSource GetPreviousSegmentSource(int segmentIndex)
+        {
+            int sourceIndex = segmentIndex - 1;
+
+            if (sourceIndex < 0)
+            {
+                sourceIndex = segmentSources.Count - 1;
+            }
+
+            while (sourceIndex != segmentIndex)
+            {
+                if (segmentSources[sourceIndex] != null)
+                {
+                    return segmentSources[sourceIndex];
+                }
+
+                sourceIndex--;
+
+                if (sourceIndex < 0)
+                {
+                    sourceIndex = segmentSources.Count - 1;
+                }
+            }
+
+            return null;
+        }
+
+        private AssembledOrbitSegmentSource GetNextSegmentSource(int segmentIndex)
+        {
+            int sourceIndex = segmentIndex + 1;
+
+            if (sourceIndex == segmentSources.Count)
+            {
+                sourceIndex = 0;
+            }
+
+            while (sourceIndex != segmentIndex)
+            {
+                if (segmentSources[sourceIndex] != null)
+                {
+                    return segmentSources[sourceIndex];
+                }
+
+                sourceIndex++;
+
+                if (sourceIndex == segmentSources.Count)
+                {
+                    sourceIndex = 0;
+                }
+            }
+
+            return null;
+        }
+
+        private void AddLeadRetainedSegments()
+        {
+            AddRetainedSectionComplement(0, OrbitAttachmentEnd.Rear, true);
+        }
+
+        private void AddMiddleRightSide(int bodyIndex)
+        {
+            float sourceLength = sourceOrbits[bodyIndex].Length;
+            OrbitRemovableSection frontSection = bodyProfiles[bodyIndex].VehicleOrbit.FrontRemovableSection;
+            OrbitRemovableSection rearSection = bodyProfiles[bodyIndex].VehicleOrbit.RearRemovableSection;
+            AddRetainedInterval(bodyIndex, sourceLength * frontSection.NormalizedEndPosition, sourceLength * rearSection.NormalizedStartPosition, false);
+        }
+
+        private void AddMiddleLeftSide(int bodyIndex)
+        {
+            float sourceLength = sourceOrbits[bodyIndex].Length;
+            OrbitRemovableSection frontSection = bodyProfiles[bodyIndex].VehicleOrbit.FrontRemovableSection;
+            OrbitRemovableSection rearSection = bodyProfiles[bodyIndex].VehicleOrbit.RearRemovableSection;
+            AddRetainedInterval(bodyIndex, sourceLength * rearSection.NormalizedEndPosition, sourceLength * frontSection.NormalizedStartPosition, false);
+        }
+
+        private void AddRetainedSectionComplement(int bodyIndex, OrbitAttachmentEnd attachmentEnd, bool isLeadBody)
+        {
+            float sourceLength = sourceOrbits[bodyIndex].Length;
+            OrbitRemovableSection removableSection = bodyProfiles[bodyIndex].VehicleOrbit.GetRemovableSection(attachmentEnd);
+            AddRetainedInterval(bodyIndex, sourceLength * removableSection.NormalizedEndPosition, sourceLength * removableSection.NormalizedStartPosition, isLeadBody);
+        }
+
+        private void AddRetainedInterval(int bodyIndex, float startDistance, float endDistance, bool isLeadBody)
+        {
+            List<OrbitSourceSegment> sourceSegments = CreateSourceSegments(bodyIndex);
+            float sourceLength = GetSourceLength(sourceSegments);
+
+            if (isLeadBody)
+            {
+                leadOrbitLength = sourceLength;
+                retainedLeadStartDistance = startDistance;
+            }
+
+            if (endDistance <= startDistance)
+            {
+                endDistance += sourceLength;
+            }
+
+            float currentDistance = startDistance;
+
+            while (currentDistance < endDistance - MinimumLength)
+            {
+                float wrappedDistance = Mathf.Repeat(currentDistance, sourceLength);
+                OrbitSourceSegment sourceSegment = GetSourceSegment(sourceSegments, wrappedDistance);
+                float cycleStartDistance = currentDistance - wrappedDistance;
+                float sourceStartDistance = cycleStartDistance + sourceSegment.StartDistance;
+                float sourceEndDistance = cycleStartDistance + sourceSegment.EndDistance;
+
+                if (sourceEndDistance <= currentDistance)
+                {
+                    sourceStartDistance += sourceLength;
+                    sourceEndDistance += sourceLength;
+                }
+
+                float nextDistance = Mathf.Min(endDistance, sourceEndDistance);
+                float startT = GetSegmentParameter(sourceSegment, currentDistance - sourceStartDistance);
+                float endT = GetSegmentParameter(sourceSegment, nextDistance - sourceStartDistance);
+                int assembledSegmentIndex = segments.Count;
+                segments.Add(CreateSubsegment(sourceSegment.Segment, startT, endT));
+                segmentSources.Add(new AssembledOrbitSegmentSource(sourceOrbits[bodyIndex], sourceSegment, sourceStartDistance, startT, endT, bodyOffsets[bodyIndex]));
+
+                if (isLeadBody)
+                {
+                    retainedLeadSegmentMappings.Add(new RetainedLeadSegmentMapping(sourceSegment, sourceStartDistance, currentDistance, nextDistance, startT, endT, assembledSegmentIndex));
+                }
+
+                currentDistance = nextDistance;
+            }
+        }
+
+        private void AddConnector(GeneratedOrbitConnector connector)
+        {
+            segments.Add(new AssembledBezierOrbitSegment(connector.StartPosition, connector.StartControlPoint, connector.EndControlPoint, connector.EndPosition));
+            segmentSources.Add(null);
+        }
+
+        private void AddReversedConnector(GeneratedOrbitConnector connector)
+        {
+            AssembledBezierOrbitSegment segment = new AssembledBezierOrbitSegment(connector.StartPosition, connector.StartControlPoint, connector.EndControlPoint, connector.EndPosition);
+            segments.Add(segment.CreateReversedSegment());
+            segmentSources.Add(null);
+        }
+
+        private List<OrbitSourceSegment> CreateSourceSegments(int bodyIndex)
+        {
+            VehicleOrbit vehicleOrbit = bodyProfiles[bodyIndex].VehicleOrbit;
+            Vector3 positionOffset = bodyOffsets[bodyIndex];
+            List<OrbitSourceSegment> sourceSegments = new List<OrbitSourceSegment>();
+            float startDistance = 0f;
+
+            for (int segmentIndex = 0; segmentIndex < vehicleOrbit.Knots.Count; segmentIndex++)
+            {
+                int nextKnotIndex = segmentIndex + 1;
+
+                if (nextKnotIndex == vehicleOrbit.Knots.Count)
+                {
+                    nextKnotIndex = 0;
+                }
+
+                BezierOrbitKnot startKnot = vehicleOrbit.Knots[segmentIndex];
+                BezierOrbitKnot endKnot = vehicleOrbit.Knots[nextKnotIndex];
+                Quaternion orientationAdjustment = vehicleOrbit.OrientationAdjustment;
+                AssembledBezierOrbitSegment segment = new AssembledBezierOrbitSegment(orientationAdjustment * startKnot.Anchor + positionOffset, orientationAdjustment * startKnot.OutgoingControlPoint + positionOffset, orientationAdjustment * endKnot.IncomingControlPoint + positionOffset, orientationAdjustment * endKnot.Anchor + positionOffset);
+                float segmentLength = GetSegmentLength(segment);
+                sourceSegments.Add(new OrbitSourceSegment(segment, startDistance, startDistance + segmentLength));
+                startDistance += segmentLength;
+            }
+
+            return sourceSegments;
+        }
+
+        private float GetSourceLength(List<OrbitSourceSegment> sourceSegments)
+        {
+            if (sourceSegments.Count == 0)
+            {
+                return 0f;
+            }
+
+            return sourceSegments[sourceSegments.Count - 1].EndDistance;
+        }
+
+        private OrbitSourceSegment GetSourceSegment(List<OrbitSourceSegment> sourceSegments, float distance)
+        {
+            for (int segmentIndex = 0; segmentIndex < sourceSegments.Count; segmentIndex++)
+            {
+                if (distance < sourceSegments[segmentIndex].EndDistance - MinimumLength)
+                {
+                    return sourceSegments[segmentIndex];
+                }
+            }
+
+            return sourceSegments[sourceSegments.Count - 1];
+        }
+
+        private float GetSegmentParameter(OrbitSourceSegment sourceSegment, float distance)
+        {
+            if (distance <= 0f)
+            {
+                return 0f;
+            }
+
+            float segmentLength = sourceSegment.EndDistance - sourceSegment.StartDistance;
+
+            if (distance >= segmentLength)
+            {
+                return 1f;
+            }
+
+            float previousDistance = 0f;
+            Vector3 previousPosition = sourceSegment.Segment.EvaluatePosition(0f);
+
+            for (int sampleIndex = 1; sampleIndex <= SamplesPerSegment; sampleIndex++)
+            {
+                float currentT = (float)sampleIndex / SamplesPerSegment;
+                Vector3 currentPosition = sourceSegment.Segment.EvaluatePosition(currentT);
+                float currentDistance = previousDistance + Vector3.Distance(previousPosition, currentPosition);
+
+                if (distance <= currentDistance)
+                {
+                    float previousT = (float)(sampleIndex - 1) / SamplesPerSegment;
+                    return Mathf.Lerp(previousT, currentT, (distance - previousDistance) / (currentDistance - previousDistance));
+                }
+
+                previousDistance = currentDistance;
+                previousPosition = currentPosition;
+            }
+
+            return 1f;
+        }
+
+        private float GetSourceSegmentDistance(OrbitSourceSegment sourceSegment, float segmentT)
+        {
+            if (segmentT <= 0f)
+            {
+                return 0f;
+            }
+
+            float segmentLength = sourceSegment.EndDistance - sourceSegment.StartDistance;
+
+            if (segmentT >= 1f)
+            {
+                return segmentLength;
+            }
+
+            float previousDistance = 0f;
+            float previousT = 0f;
+            Vector3 previousPosition = sourceSegment.Segment.EvaluatePosition(0f);
+
+            for (int sampleIndex = 1; sampleIndex <= SamplesPerSegment; sampleIndex++)
+            {
+                float currentT = (float)sampleIndex / SamplesPerSegment;
+                Vector3 currentPosition = sourceSegment.Segment.EvaluatePosition(currentT);
+                float currentDistance = previousDistance + Vector3.Distance(previousPosition, currentPosition);
+
+                if (segmentT <= currentT)
+                {
+                    return Mathf.Lerp(previousDistance, currentDistance, (segmentT - previousT) / (currentT - previousT));
+                }
+
+                previousDistance = currentDistance;
+                previousT = currentT;
+                previousPosition = currentPosition;
+            }
+
+            return segmentLength;
+        }
+
+        private AssembledBezierOrbitSegment CreateSubsegment(AssembledBezierOrbitSegment sourceSegment, float startT, float endT)
+        {
+            Vector3 startPosition = sourceSegment.EvaluatePosition(startT);
+            Vector3 endPosition = sourceSegment.EvaluatePosition(endT);
+            float normalizedRange = endT - startT;
+            Vector3 startControlPoint = startPosition + normalizedRange * EvaluateDerivative(sourceSegment, startT) / 3f;
+            Vector3 endControlPoint = endPosition - normalizedRange * EvaluateDerivative(sourceSegment, endT) / 3f;
+            return new AssembledBezierOrbitSegment(startPosition, startControlPoint, endControlPoint, endPosition);
+        }
+
+        private Vector3 EvaluateDerivative(AssembledBezierOrbitSegment segment, float segmentT)
+        {
+            float inverseT = 1f - segmentT;
+            Vector3 firstDifference = segment.StartControlPoint - segment.StartPosition;
+            Vector3 secondDifference = segment.EndControlPoint - segment.StartControlPoint;
+            Vector3 thirdDifference = segment.EndPosition - segment.EndControlPoint;
+            return 3f * inverseT * inverseT * firstDifference + 6f * inverseT * segmentT * secondDifference + 3f * segmentT * segmentT * thirdDifference;
+        }
+
+        private bool AreSegmentEndpointsConnected()
+        {
+            if (segments.Count == 0)
+            {
+                return false;
+            }
+
+            for (int segmentIndex = 0; segmentIndex < segments.Count; segmentIndex++)
+            {
+                int nextSegmentIndex = segmentIndex + 1;
+
+                if (nextSegmentIndex == segments.Count)
+                {
+                    nextSegmentIndex = 0;
+                }
+
+                if (Vector3.Distance(segments[segmentIndex].EndPosition, segments[nextSegmentIndex].StartPosition) > PlanarTolerance)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool AreSegmentsPlanar()
+        {
+            Vector3 planeNormal = bodyProfiles[0].VehicleOrbit.OrientationAdjustment * Vector3.up;
+            Vector3 planePosition = segments[0].StartPosition;
+
+            for (int segmentIndex = 0; segmentIndex < segments.Count; segmentIndex++)
+            {
+                AssembledBezierOrbitSegment segment = segments[segmentIndex];
+
+                if (!IsPointOnPlane(segment.StartPosition, planePosition, planeNormal) || !IsPointOnPlane(segment.StartControlPoint, planePosition, planeNormal) || !IsPointOnPlane(segment.EndControlPoint, planePosition, planeNormal) || !IsPointOnPlane(segment.EndPosition, planePosition, planeNormal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool IsPointOnPlane(Vector3 point, Vector3 planePosition, Vector3 planeNormal)
+        {
+            return Mathf.Abs(Vector3.Dot(point - planePosition, planeNormal)) <= PlanarTolerance;
+        }
+
+        private void BuildArcLengthSamples()
+        {
+            samples.Clear();
+            Length = 0f;
+            samples.Add(new OrbitArcLengthSample(segments[0].StartPosition, 0f, 0, 0f));
+
+            for (int segmentIndex = 0; segmentIndex < segments.Count; segmentIndex++)
+            {
+                AssembledBezierOrbitSegment segment = segments[segmentIndex];
+                Vector3 previousPosition = segment.EvaluatePosition(0f);
+
+                for (int sampleIndex = 1; sampleIndex <= SamplesPerSegment; sampleIndex++)
+                {
+                    float segmentT = (float)sampleIndex / SamplesPerSegment;
+                    Vector3 currentPosition = segment.EvaluatePosition(segmentT);
+                    Length += Vector3.Distance(previousPosition, currentPosition);
+                    samples.Add(new OrbitArcLengthSample(currentPosition, Length, segmentIndex, segmentT));
+                    previousPosition = currentPosition;
+                }
+            }
+        }
+
+        private float GetAssembledSegmentDistance(int assembledSegmentIndex, float assembledSegmentT)
+        {
+            float previousDistance = 0f;
+            float previousT = 0f;
+
+            for (int sampleIndex = 1; sampleIndex < samples.Count; sampleIndex++)
+            {
+                OrbitArcLengthSample currentSample = samples[sampleIndex];
+
+                if (currentSample.SegmentIndex == assembledSegmentIndex)
+                {
+                    if (assembledSegmentT <= currentSample.SegmentT)
+                    {
+                        return Mathf.Lerp(previousDistance, currentSample.Distance, (assembledSegmentT - previousT) / (currentSample.SegmentT - previousT));
+                    }
+
+                    previousT = currentSample.SegmentT;
+                }
+
+                previousDistance = currentSample.Distance;
+            }
+
+            return 0f;
+        }
+
+        private float GetSegmentLength(AssembledBezierOrbitSegment segment)
+        {
+            float length = 0f;
+            Vector3 previousPosition = segment.EvaluatePosition(0f);
+
+            for (int sampleIndex = 1; sampleIndex <= SamplesPerSegment; sampleIndex++)
+            {
+                float segmentT = (float)sampleIndex / SamplesPerSegment;
+                Vector3 currentPosition = segment.EvaluatePosition(segmentT);
+                length += Vector3.Distance(previousPosition, currentPosition);
+                previousPosition = currentPosition;
+            }
+
+            return length;
+        }
+
+        private float CalculateSignedArea()
+        {
+            float signedArea = 0f;
+
+            for (int sampleIndex = 1; sampleIndex < samples.Count; sampleIndex++)
+            {
+                Vector3 previousPosition = samples[sampleIndex - 1].Position;
+                Vector3 currentPosition = samples[sampleIndex].Position;
+                signedArea += previousPosition.x * currentPosition.z - currentPosition.x * previousPosition.z;
+            }
+
+            return signedArea * 0.5f;
+        }
+
+        private bool HasSelfIntersection()
+        {
+            int segmentCount = samples.Count - 1;
+
+            for (int firstSegmentIndex = 0; firstSegmentIndex < segmentCount; firstSegmentIndex++)
+            {
+                Vector2 firstStart = ToPlanePosition(samples[firstSegmentIndex].Position);
+                Vector2 firstEnd = ToPlanePosition(samples[firstSegmentIndex + 1].Position);
+
+                for (int secondSegmentIndex = firstSegmentIndex + 1; secondSegmentIndex < segmentCount; secondSegmentIndex++)
+                {
+                    if (secondSegmentIndex == firstSegmentIndex + 1 || firstSegmentIndex == 0 && secondSegmentIndex == segmentCount - 1)
+                    {
+                        continue;
+                    }
+
+                    Vector2 secondStart = ToPlanePosition(samples[secondSegmentIndex].Position);
+                    Vector2 secondEnd = ToPlanePosition(samples[secondSegmentIndex + 1].Position);
+
+                    if (DoSegmentsIntersect(firstStart, firstEnd, secondStart, secondEnd))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private Vector2 ToPlanePosition(Vector3 position)
+        {
+            return new Vector2(position.x, position.z);
+        }
+
+        private bool DoSegmentsIntersect(Vector2 firstStart, Vector2 firstEnd, Vector2 secondStart, Vector2 secondEnd)
+        {
+            float firstStartSide = CalculateCross(firstStart, firstEnd, secondStart);
+            float firstEndSide = CalculateCross(firstStart, firstEnd, secondEnd);
+            float secondStartSide = CalculateCross(secondStart, secondEnd, firstStart);
+            float secondEndSide = CalculateCross(secondStart, secondEnd, firstEnd);
+
+            if (firstStartSide == 0f && IsPointOnSegment(firstStart, firstEnd, secondStart))
+            {
+                return true;
+            }
+
+            if (firstEndSide == 0f && IsPointOnSegment(firstStart, firstEnd, secondEnd))
+            {
+                return true;
+            }
+
+            if (secondStartSide == 0f && IsPointOnSegment(secondStart, secondEnd, firstStart))
+            {
+                return true;
+            }
+
+            if (secondEndSide == 0f && IsPointOnSegment(secondStart, secondEnd, firstEnd))
+            {
+                return true;
+            }
+
+            bool firstSegmentSeparatesSecondSegment = firstStartSide > 0f && firstEndSide < 0f || firstStartSide < 0f && firstEndSide > 0f;
+            bool secondSegmentSeparatesFirstSegment = secondStartSide > 0f && secondEndSide < 0f || secondStartSide < 0f && secondEndSide > 0f;
+            return firstSegmentSeparatesSecondSegment && secondSegmentSeparatesFirstSegment;
+        }
+
+        private float CalculateCross(Vector2 lineStart, Vector2 lineEnd, Vector2 point)
+        {
+            Vector2 line = lineEnd - lineStart;
+            Vector2 offset = point - lineStart;
+            return line.x * offset.y - line.y * offset.x;
+        }
+
+        private bool IsPointOnSegment(Vector2 segmentStart, Vector2 segmentEnd, Vector2 point)
+        {
+            float minimumX = Mathf.Min(segmentStart.x, segmentEnd.x);
+            float maximumX = Mathf.Max(segmentStart.x, segmentEnd.x);
+            float minimumY = Mathf.Min(segmentStart.y, segmentEnd.y);
+            float maximumY = Mathf.Max(segmentStart.y, segmentEnd.y);
+            return point.x >= minimumX && point.x <= maximumX && point.y >= minimumY && point.y <= maximumY;
+        }
+
+        private readonly struct RetainedLeadSegmentMapping
+        {
+            public OrbitSourceSegment SourceSegment { get; }
+            public float SourceSegmentStartDistance { get; }
+            public float SourceStartDistance { get; }
+            public float SourceEndDistance { get; }
+            public float SourceStartT { get; }
+            public float SourceEndT { get; }
+            public int AssembledSegmentIndex { get; }
+
+            public RetainedLeadSegmentMapping(OrbitSourceSegment sourceSegment, float sourceSegmentStartDistance, float sourceStartDistance, float sourceEndDistance, float sourceStartT, float sourceEndT, int assembledSegmentIndex)
+            {
+                SourceSegment = sourceSegment;
+                SourceSegmentStartDistance = sourceSegmentStartDistance;
+                SourceStartDistance = sourceStartDistance;
+                SourceEndDistance = sourceEndDistance;
+                SourceStartT = sourceStartT;
+                SourceEndT = sourceEndT;
+                AssembledSegmentIndex = assembledSegmentIndex;
+            }
+        }
+
+        private readonly struct OrbitArcLengthSample
+        {
+            public Vector3 Position { get; }
+            public float Distance { get; }
+            public int SegmentIndex { get; }
+            public float SegmentT { get; }
+
+            public OrbitArcLengthSample(Vector3 position, float distance, int segmentIndex, float segmentT)
+            {
+                Position = position;
+                Distance = distance;
+                SegmentIndex = segmentIndex;
+                SegmentT = segmentT;
+            }
+        }
+    }
+}

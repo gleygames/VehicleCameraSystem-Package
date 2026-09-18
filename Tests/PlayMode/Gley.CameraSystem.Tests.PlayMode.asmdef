@@ -1,0 +1,19 @@
+{
+    "name": "Gley.CameraSystem.Tests.PlayMode",
+    "rootNamespace": "Gley.CameraSystem.Tests.PlayMode",
+    "references": [
+        "Gley.CameraSystem"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ]
+}
