@@ -7,18 +7,29 @@ namespace Gley.CameraSystem
         private readonly VehicleProfile leadProfile;
         private readonly VehicleProfile middleProfile;
         private readonly VehicleProfile rearProfile;
+        private readonly OrbitConnectorPairOverride leadMiddleConnectorOverride;
+        private readonly OrbitConnectorPairOverride middleRearConnectorOverride;
 
         public GeneratedOrbitConnectorPair LeadMiddleConnectors { get; private set; }
         public GeneratedOrbitConnectorPair MiddleRearConnectors { get; private set; }
+        public OrbitConnectorPairResolutionResult LeadMiddleConnectorResolutionResult { get; private set; }
+        public OrbitConnectorPairResolutionResult MiddleRearConnectorResolutionResult { get; private set; }
         public ThreeBodyOrbitReferenceLayoutResult LayoutResult { get; private set; }
         public Vector3 MiddleBodyLocalPosition { get; private set; }
         public Vector3 RearBodyLocalPosition { get; private set; }
 
         public ThreeBodyOrbitReferenceLayout(VehicleProfile leadVehicleProfile, VehicleProfile middleVehicleProfile, VehicleProfile rearVehicleProfile)
+            : this(leadVehicleProfile, middleVehicleProfile, rearVehicleProfile, null, null)
+        {
+        }
+
+        public ThreeBodyOrbitReferenceLayout(VehicleProfile leadVehicleProfile, VehicleProfile middleVehicleProfile, VehicleProfile rearVehicleProfile, OrbitConnectorPairOverride leadMiddleOverride, OrbitConnectorPairOverride middleRearOverride)
         {
             leadProfile = leadVehicleProfile;
             middleProfile = middleVehicleProfile;
             rearProfile = rearVehicleProfile;
+            leadMiddleConnectorOverride = leadMiddleOverride;
+            middleRearConnectorOverride = middleRearOverride;
             BuildLayout();
         }
 
@@ -34,26 +45,40 @@ namespace Gley.CameraSystem
 
         private void BuildLayout()
         {
-            TwoBodyOrbitConnectorGenerator leadMiddleGenerator = new TwoBodyOrbitConnectorGenerator(leadProfile, middleProfile);
+            OrbitConnectorPairResolver leadMiddleResolver = new OrbitConnectorPairResolver(leadProfile, middleProfile, leadMiddleConnectorOverride);
+            LeadMiddleConnectorResolutionResult = leadMiddleResolver.ResolutionResult;
 
-            if (leadMiddleGenerator.GenerationResult != TwoBodyOrbitConnectorGenerationResult.Generated)
+            if (leadMiddleResolver.ResolutionResult == OrbitConnectorPairResolutionResult.ConnectorGenerationFailed)
             {
                 LayoutResult = ThreeBodyOrbitReferenceLayoutResult.LeadMiddleConnectorGenerationFailed;
                 return;
             }
 
-            TwoBodyOrbitConnectorGenerator middleRearGenerator = new TwoBodyOrbitConnectorGenerator(middleProfile, rearProfile);
+            if (leadMiddleResolver.ResolutionResult != OrbitConnectorPairResolutionResult.Generated && leadMiddleResolver.ResolutionResult != OrbitConnectorPairResolutionResult.Overridden)
+            {
+                LayoutResult = ThreeBodyOrbitReferenceLayoutResult.LeadMiddleConnectorOverrideInvalid;
+                return;
+            }
 
-            if (middleRearGenerator.GenerationResult != TwoBodyOrbitConnectorGenerationResult.Generated)
+            OrbitConnectorPairResolver middleRearResolver = new OrbitConnectorPairResolver(middleProfile, rearProfile, middleRearConnectorOverride);
+            MiddleRearConnectorResolutionResult = middleRearResolver.ResolutionResult;
+
+            if (middleRearResolver.ResolutionResult == OrbitConnectorPairResolutionResult.ConnectorGenerationFailed)
             {
                 LayoutResult = ThreeBodyOrbitReferenceLayoutResult.MiddleRearConnectorGenerationFailed;
                 return;
             }
 
-            MiddleBodyLocalPosition = leadMiddleGenerator.RearBodyLocalPosition;
-            RearBodyLocalPosition = MiddleBodyLocalPosition + middleRearGenerator.RearBodyLocalPosition;
-            LeadMiddleConnectors = leadMiddleGenerator.ConnectorPair;
-            MiddleRearConnectors = CreateTranslatedConnectorPair(middleRearGenerator.ConnectorPair, MiddleBodyLocalPosition);
+            if (middleRearResolver.ResolutionResult != OrbitConnectorPairResolutionResult.Generated && middleRearResolver.ResolutionResult != OrbitConnectorPairResolutionResult.Overridden)
+            {
+                LayoutResult = ThreeBodyOrbitReferenceLayoutResult.MiddleRearConnectorOverrideInvalid;
+                return;
+            }
+
+            MiddleBodyLocalPosition = leadMiddleResolver.RearBodyLocalPosition;
+            RearBodyLocalPosition = MiddleBodyLocalPosition + middleRearResolver.RearBodyLocalPosition;
+            LeadMiddleConnectors = leadMiddleResolver.ConnectorPair;
+            MiddleRearConnectors = CreateTranslatedConnectorPair(middleRearResolver.ConnectorPair, MiddleBodyLocalPosition);
             LayoutResult = ThreeBodyOrbitReferenceLayoutResult.Valid;
         }
 

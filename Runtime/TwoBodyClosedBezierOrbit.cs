@@ -5,9 +5,14 @@ namespace Gley.CameraSystem
 {
     public class TwoBodyClosedBezierOrbit
     {
+        private readonly List<GeneratedOrbitConnectorPair> connectorPairs = new List<GeneratedOrbitConnectorPair>();
+        private readonly List<Vector3> bodyOffsets = new List<Vector3>();
+        private readonly List<VehicleProfile> bodyProfiles = new List<VehicleProfile>();
         private readonly LinearOrbitComposer composer;
-        private readonly ClosedBezierOrbit frontSourceOrbit;
-        private readonly ClosedBezierOrbit rearSourceOrbit;
+        private readonly VehicleProfile frontVehicleProfile;
+        private readonly VehicleProfile rearVehicleProfile;
+        private ClosedBezierOrbit frontSourceOrbit;
+        private ClosedBezierOrbit rearSourceOrbit;
 
         public IReadOnlyList<AssembledBezierOrbitSegment> Segments => composer.Segments;
 
@@ -20,9 +25,13 @@ namespace Gley.CameraSystem
 
         public TwoBodyClosedBezierOrbit(VehicleProfile frontVehicleProfile, VehicleProfile rearVehicleProfile)
         {
-            frontSourceOrbit = CreateSourceOrbit(frontVehicleProfile);
-            rearSourceOrbit = CreateSourceOrbit(rearVehicleProfile);
-            composer = new LinearOrbitComposer(CreateProfiles(frontVehicleProfile, rearVehicleProfile), CreateOffsets(frontVehicleProfile, rearVehicleProfile), CreateConnectors(frontVehicleProfile, rearVehicleProfile));
+            this.frontVehicleProfile = frontVehicleProfile;
+            this.rearVehicleProfile = rearVehicleProfile;
+            bodyProfiles.Add(frontVehicleProfile);
+            bodyProfiles.Add(rearVehicleProfile);
+            RefreshSourceOrbits();
+            RefreshAssemblyInputs();
+            composer = new LinearOrbitComposer(bodyProfiles, bodyOffsets, connectorPairs);
         }
 
         public Vector3 EvaluateLeadBodyLocalPosition(float distance)
@@ -57,7 +66,31 @@ namespace Gley.CameraSystem
 
         public void Rebuild()
         {
+            RefreshSourceOrbits();
+            RefreshAssemblyInputs();
             composer.Rebuild();
+        }
+
+        private void RefreshSourceOrbits()
+        {
+            frontSourceOrbit = CreateSourceOrbit(frontVehicleProfile);
+            rearSourceOrbit = CreateSourceOrbit(rearVehicleProfile);
+        }
+
+        private void RefreshAssemblyInputs()
+        {
+            bodyOffsets.Clear();
+            connectorPairs.Clear();
+            bodyOffsets.Add(Vector3.zero);
+            bodyOffsets.Add(Vector3.zero);
+
+            TwoBodyOrbitConnectorGenerator connectorGenerator = new TwoBodyOrbitConnectorGenerator(frontVehicleProfile, rearVehicleProfile);
+
+            if (connectorGenerator.GenerationResult == TwoBodyOrbitConnectorGenerationResult.Generated)
+            {
+                bodyOffsets[1] = connectorGenerator.RearBodyLocalPosition;
+                connectorPairs.Add(connectorGenerator.ConnectorPair);
+            }
         }
 
         private TwoBodyClosedBezierOrbitAssemblyResult GetAssemblyResult()
@@ -115,40 +148,5 @@ namespace Gley.CameraSystem
             return new ClosedBezierOrbit(profile.VehicleOrbit);
         }
 
-        private List<VehicleProfile> CreateProfiles(VehicleProfile frontProfile, VehicleProfile rearProfile)
-        {
-            List<VehicleProfile> profiles = new List<VehicleProfile>();
-            profiles.Add(frontProfile);
-            profiles.Add(rearProfile);
-            return profiles;
-        }
-
-        private List<Vector3> CreateOffsets(VehicleProfile frontProfile, VehicleProfile rearProfile)
-        {
-            List<Vector3> offsets = new List<Vector3>();
-            offsets.Add(Vector3.zero);
-            offsets.Add(Vector3.zero);
-            TwoBodyOrbitConnectorGenerator connectorGenerator = new TwoBodyOrbitConnectorGenerator(frontProfile, rearProfile);
-
-            if (connectorGenerator.GenerationResult == TwoBodyOrbitConnectorGenerationResult.Generated)
-            {
-                offsets[1] = connectorGenerator.RearBodyLocalPosition;
-            }
-
-            return offsets;
-        }
-
-        private List<GeneratedOrbitConnectorPair> CreateConnectors(VehicleProfile frontProfile, VehicleProfile rearProfile)
-        {
-            List<GeneratedOrbitConnectorPair> connectorPairs = new List<GeneratedOrbitConnectorPair>();
-            TwoBodyOrbitConnectorGenerator connectorGenerator = new TwoBodyOrbitConnectorGenerator(frontProfile, rearProfile);
-
-            if (connectorGenerator.GenerationResult == TwoBodyOrbitConnectorGenerationResult.Generated)
-            {
-                connectorPairs.Add(connectorGenerator.ConnectorPair);
-            }
-
-            return connectorPairs;
-        }
     }
 }

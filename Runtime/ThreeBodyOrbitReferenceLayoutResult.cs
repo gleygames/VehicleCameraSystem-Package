@@ -5,6 +5,8 @@ namespace Gley.CameraSystem
         NotBuilt,
         Valid,
         LeadMiddleConnectorGenerationFailed,
-        MiddleRearConnectorGenerationFailed
+        MiddleRearConnectorGenerationFailed,
+        LeadMiddleConnectorOverrideInvalid,
+        MiddleRearConnectorOverrideInvalid
     }
 }

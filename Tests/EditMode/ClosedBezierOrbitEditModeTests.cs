@@ -352,29 +352,146 @@ namespace Gley.CameraSystem.Tests.EditMode
         }
 
         [Test]
+        public void TwoBodyRebuildRefreshesProfileGeometryAndWatchMarkers()
+        {
+            VehicleProfile frontProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 12f));
+            VehicleProfile rearProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 12f));
+            frontProfile.VehicleOrbit.ConfigureWatchMarkers(CreateWatchMarkers(new Vector3(2f, 3f, 4f), new Vector3(8f, 5f, 6f)));
+            rearProfile.VehicleOrbit.ConfigureWatchMarkers(CreateWatchMarkers(new Vector3(12f, 4f, 8f), new Vector3(16f, 6f, 10f)));
+            frontProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 1f / 3f), CreateRemovableSection(0.5f, 5f / 6f));
+            rearProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 1f / 3f), CreateRemovableSection(0.5f, 5f / 6f));
+            TwoBodyClosedBezierOrbit orbit = new TwoBodyClosedBezierOrbit(frontProfile, rearProfile);
+            Vector3 initialWatchPoint = orbit.EvaluateLeadBodyLocalWatchPoint(0f);
+            VehicleOrbit replacementOrbit = CreateRectangleOrbit(20f, 10f, Quaternion.identity);
+            replacementOrbit.ConfigureWatchMarkers(CreateWatchMarkers(new Vector3(20f, 3f, 4f), new Vector3(30f, 5f, 6f)));
+            replacementOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 1f / 3f), CreateRemovableSection(0.5f, 5f / 6f));
+            frontProfile.ConfigureOrbit(replacementOrbit);
+            VehicleConnectorAnchors rearAnchors = new VehicleConnectorAnchors();
+            rearAnchors.Configure(new Vector3(10f, 0f, -2f), new Vector3(10f, 0f, 12f));
+            rearProfile.ConfigureConnectorAnchors(rearAnchors);
+
+            orbit.Rebuild();
+            ClosedBezierOrbit expectedFrontOrbit = new ClosedBezierOrbit(replacementOrbit);
+            Vector3 expectedWatchPoint = expectedFrontOrbit.EvaluateBodyLocalWatchPoint(expectedFrontOrbit.Length * (5f / 6f));
+
+            Assert.AreEqual(TwoBodyClosedBezierOrbitAssemblyResult.Valid, orbit.AssemblyResult);
+            AssertPosition(new Vector3(20f, 0f, 14f), orbit.Segments[3].EndPosition);
+            Assert.Greater(Vector3.Distance(initialWatchPoint, orbit.EvaluateLeadBodyLocalWatchPoint(0f)), 1f);
+            AssertPosition(expectedWatchPoint, orbit.EvaluateLeadBodyLocalWatchPoint(0f));
+
+            replacementOrbit.WatchMarkers[1].Configure(1f, new Vector3(30f, 5f, 6f));
+            orbit.Rebuild();
+
+            Assert.AreEqual(OrbitWatchMarkerValidationResult.InvalidMarkerPosition, orbit.FrontWatchMarkerValidationResult);
+            Assert.IsFalse(orbit.HasValidWatchMarkers);
+
+            Object.DestroyImmediate(frontProfile);
+            Object.DestroyImmediate(rearProfile);
+        }
+
+        [Test]
         public void ThreeBodyClosedBezierOrbitBuildsAClosedReferenceLoopWithGeneratedPairs()
         {
-            VehicleProfile leadProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 10f));
-            VehicleProfile middleProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 10f));
-            VehicleProfile rearProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 10f));
+            VehicleProfile leadProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 12f));
+            VehicleProfile middleProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 12f));
+            VehicleProfile rearProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 12f));
             leadProfile.VehicleOrbit.ConfigureWatchMarkers(CreateWatchMarkers(new Vector3(10f, 3f, 5f), new Vector3(10f, 4f, 5f)));
             middleProfile.VehicleOrbit.ConfigureWatchMarkers(CreateWatchMarkers(new Vector3(10f, 5f, 5f), new Vector3(10f, 6f, 5f)));
             rearProfile.VehicleOrbit.ConfigureWatchMarkers(CreateWatchMarkers(new Vector3(10f, 7f, 5f), new Vector3(10f, 8f, 5f)));
-            leadProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 0.2f), CreateRemovableSection(0.5f, 5f / 6f));
-            middleProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 0.2f), CreateRemovableSection(0.5f, 5f / 6f));
-            rearProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 0.2f), CreateRemovableSection(0.5f, 5f / 6f));
+            leadProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 1f / 3f), CreateRemovableSection(0.5f, 5f / 6f));
+            middleProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 1f / 3f), CreateRemovableSection(0.5f, 5f / 6f));
+            rearProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 1f / 3f), CreateRemovableSection(0.5f, 5f / 6f));
             ThreeBodyClosedBezierOrbit orbit = new ThreeBodyClosedBezierOrbit(leadProfile, middleProfile, rearProfile);
 
             Assert.AreEqual(ThreeBodyOrbitReferenceLayoutResult.Valid, orbit.ReferenceLayout.LayoutResult);
             Assert.AreEqual(ThreeBodyClosedBezierOrbitAssemblyResult.Valid, orbit.AssemblyResult);
             Assert.IsTrue(orbit.IsClosed);
             Assert.IsTrue(orbit.HasValidWatchMarkers);
+            Assert.AreEqual(12, orbit.Segments.Count);
+            Assert.AreEqual(108f, orbit.Length, 0.001f);
+            AssertPosition(new Vector3(0f, 0f, 12f), orbit.ReferenceLayout.MiddleBodyLocalPosition);
+            AssertPosition(new Vector3(0f, 0f, 24f), orbit.ReferenceLayout.RearBodyLocalPosition);
             AssertPosition(new Vector3(0f, 0f, 10f), orbit.Segments[0].StartPosition);
             AssertPosition(new Vector3(20f, 0f, 10f), orbit.ReferenceLayout.LeadMiddleConnectors.RightConnector.StartPosition);
-            AssertPosition(new Vector3(20f, 0f, 20f), orbit.ReferenceLayout.MiddleRearConnectors.RightConnector.StartPosition);
-            AssertPosition(orbit.Segments[0].StartPosition, orbit.Segments[orbit.Segments.Count - 1].EndPosition);
-            Assert.Greater(orbit.Length, 70f);
+            AssertPosition(new Vector3(20f, 0f, 12f), orbit.ReferenceLayout.LeadMiddleConnectors.RightConnector.EndPosition);
+            AssertPosition(new Vector3(20f, 0f, 22f), orbit.ReferenceLayout.MiddleRearConnectors.RightConnector.StartPosition);
+            AssertPosition(new Vector3(20f, 0f, 24f), orbit.ReferenceLayout.MiddleRearConnectors.RightConnector.EndPosition);
 
+            for (int segmentIndex = 0; segmentIndex < orbit.Segments.Count; segmentIndex++)
+            {
+                int nextSegmentIndex = (segmentIndex + 1) % orbit.Segments.Count;
+                AssertPosition(orbit.Segments[segmentIndex].EndPosition, orbit.Segments[nextSegmentIndex].StartPosition);
+                Assert.Greater(Vector3.Distance(orbit.Segments[segmentIndex].StartPosition, orbit.Segments[segmentIndex].EndPosition), 1.99f);
+            }
+
+            AssertPosition(new Vector3(20f, 0f, 11f), orbit.EvaluateLeadBodyLocalPosition(41f));
+            AssertPosition(new Vector3(20f, 0f, 23f), orbit.EvaluateLeadBodyLocalPosition(53f));
+            AssertPosition(new Vector3(0f, 0f, 23f), orbit.EvaluateLeadBodyLocalPosition(95f));
+            AssertPosition(new Vector3(0f, 0f, 11f), orbit.EvaluateLeadBodyLocalPosition(107f));
+            AssertPosition(orbit.Segments[0].StartPosition, orbit.EvaluateLeadBodyLocalPosition(orbit.Length));
+
+            Object.DestroyImmediate(leadProfile);
+            Object.DestroyImmediate(middleProfile);
+            Object.DestroyImmediate(rearProfile);
+        }
+
+        [Test]
+        public void ThreeBodyClosedBezierOrbitRejectsConnectorsThatRetraceRetainedEdges()
+        {
+            VehicleProfile leadProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 10f));
+            VehicleProfile middleProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 10f));
+            VehicleProfile rearProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 10f));
+            leadProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 0.2f), CreateRemovableSection(0.5f, 5f / 6f));
+            middleProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 0.2f), CreateRemovableSection(0.5f, 5f / 6f));
+            rearProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 0.2f), CreateRemovableSection(0.5f, 5f / 6f));
+            ThreeBodyClosedBezierOrbit orbit = new ThreeBodyClosedBezierOrbit(leadProfile, middleProfile, rearProfile);
+
+            Assert.AreEqual(ThreeBodyOrbitReferenceLayoutResult.Valid, orbit.ReferenceLayout.LayoutResult);
+            AssertPosition(new Vector3(20f, 0f, 10f), orbit.ReferenceLayout.LeadMiddleConnectors.RightConnector.StartPosition);
+            AssertPosition(new Vector3(12f, 0f, 10f), orbit.ReferenceLayout.LeadMiddleConnectors.RightConnector.EndPosition);
+            Assert.AreEqual(ThreeBodyClosedBezierOrbitAssemblyResult.SelfIntersecting, orbit.AssemblyResult);
+            Assert.IsFalse(orbit.IsClosed);
+
+            Object.DestroyImmediate(leadProfile);
+            Object.DestroyImmediate(middleProfile);
+            Object.DestroyImmediate(rearProfile);
+        }
+
+        [Test]
+        public void ThreeBodyClosedBezierOrbitResolvesOrderedPairOverridesAndRejectsMismatchedPairs()
+        {
+            VehicleProfile leadProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 12f));
+            VehicleProfile middleProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 12f));
+            VehicleProfile rearProfile = CreateConnectorProfile(20f, 10f, new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 12f));
+            leadProfile.VehicleOrbit.ConfigureWatchMarkers(CreateWatchMarkers(new Vector3(10f, 3f, 5f), new Vector3(10f, 4f, 5f)));
+            middleProfile.VehicleOrbit.ConfigureWatchMarkers(CreateWatchMarkers(new Vector3(10f, 3f, 5f), new Vector3(10f, 4f, 5f)));
+            rearProfile.VehicleOrbit.ConfigureWatchMarkers(CreateWatchMarkers(new Vector3(10f, 3f, 5f), new Vector3(10f, 4f, 5f)));
+            leadProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 1f / 3f), CreateRemovableSection(0.5f, 5f / 6f));
+            middleProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 1f / 3f), CreateRemovableSection(0.5f, 5f / 6f));
+            rearProfile.VehicleOrbit.ConfigureRemovableSections(CreateRemovableSection(0f, 1f / 3f), CreateRemovableSection(0.5f, 5f / 6f));
+            TwoBodyOrbitConnectorGenerator leadMiddleGenerator = new TwoBodyOrbitConnectorGenerator(leadProfile, middleProfile);
+            TwoBodyOrbitConnectorGenerator middleRearGenerator = new TwoBodyOrbitConnectorGenerator(middleProfile, rearProfile);
+            OrbitConnectorPairOverride leadMiddleOverride = CreateConnectorOverride(leadProfile, middleProfile, leadMiddleGenerator.ConnectorPair, Vector3.left, Vector3.right);
+            OrbitConnectorPairOverride middleRearOverride = CreateConnectorOverride(middleProfile, rearProfile, middleRearGenerator.ConnectorPair, Vector3.left, Vector3.right);
+            ThreeBodyClosedBezierOrbit orbit = new ThreeBodyClosedBezierOrbit(leadProfile, middleProfile, rearProfile, leadMiddleOverride, middleRearOverride);
+            OrbitConnectorPairOverride mismatchedOverride = CreateConnectorOverride(rearProfile, middleProfile, leadMiddleGenerator.ConnectorPair, Vector3.left, Vector3.right);
+            ThreeBodyClosedBezierOrbit invalidOrbit = new ThreeBodyClosedBezierOrbit(leadProfile, middleProfile, rearProfile, mismatchedOverride, null);
+            Vector3 expectedLeadMiddleRightControl = leadMiddleGenerator.ConnectorPair.RightConnector.StartControlPoint + Vector3.right;
+            Vector3 expectedMiddleRearRightControl = middleRearGenerator.ConnectorPair.RightConnector.StartControlPoint + new Vector3(1f, 0f, 12f);
+
+            Assert.AreEqual(TwoBodyOrbitConnectorGenerationResult.Generated, leadMiddleGenerator.GenerationResult);
+            Assert.AreEqual(TwoBodyOrbitConnectorGenerationResult.Generated, middleRearGenerator.GenerationResult);
+            Assert.AreEqual(ThreeBodyClosedBezierOrbitAssemblyResult.Valid, orbit.AssemblyResult);
+            Assert.AreEqual(OrbitConnectorPairResolutionResult.Overridden, orbit.ReferenceLayout.LeadMiddleConnectorResolutionResult);
+            Assert.AreEqual(OrbitConnectorPairResolutionResult.Overridden, orbit.ReferenceLayout.MiddleRearConnectorResolutionResult);
+            AssertPosition(expectedLeadMiddleRightControl, orbit.Segments[3].StartControlPoint);
+            AssertPosition(expectedMiddleRearRightControl, orbit.Segments[5].StartControlPoint);
+            Assert.AreEqual(ThreeBodyClosedBezierOrbitAssemblyResult.LeadMiddleConnectorOverrideInvalid, invalidOrbit.AssemblyResult);
+            Assert.AreEqual(OrbitConnectorPairResolutionResult.OverrideDoesNotMatchPair, invalidOrbit.ReferenceLayout.LeadMiddleConnectorResolutionResult);
+
+            Object.DestroyImmediate(leadMiddleOverride);
+            Object.DestroyImmediate(middleRearOverride);
+            Object.DestroyImmediate(mismatchedOverride);
             Object.DestroyImmediate(leadProfile);
             Object.DestroyImmediate(middleProfile);
             Object.DestroyImmediate(rearProfile);
@@ -520,6 +637,26 @@ namespace Gley.CameraSystem.Tests.EditMode
             watchMarkers.Add(CreateWatchMarker(0f, firstWatchPoint));
             watchMarkers.Add(CreateWatchMarker(0.5f, secondWatchPoint));
             return watchMarkers;
+        }
+
+        private OrbitConnectorPairOverride CreateConnectorOverride(VehicleProfile frontProfile, VehicleProfile rearProfile, GeneratedOrbitConnectorPair generatedConnectorPair, Vector3 leftControlPointOffset, Vector3 rightControlPointOffset)
+        {
+            OrbitConnectorGeometry leftConnector = CreateConnectorGeometry(generatedConnectorPair.LeftConnector, leftControlPointOffset);
+            OrbitConnectorGeometry rightConnector = CreateConnectorGeometry(generatedConnectorPair.RightConnector, rightControlPointOffset);
+            OrbitConnectorPairOverride connectorOverride = ScriptableObject.CreateInstance<OrbitConnectorPairOverride>();
+            connectorOverride.Configure(frontProfile, rearProfile, OrbitAttachmentEnd.Rear, OrbitAttachmentEnd.Front, leftConnector, rightConnector);
+            return connectorOverride;
+        }
+
+        private OrbitConnectorGeometry CreateConnectorGeometry(GeneratedOrbitConnector generatedConnector, Vector3 controlPointOffset)
+        {
+            OrbitConnectorGeometry connectorGeometry = new OrbitConnectorGeometry();
+            connectorGeometry.Configure(
+                generatedConnector.StartPosition,
+                generatedConnector.StartControlPoint + controlPointOffset,
+                generatedConnector.EndControlPoint + controlPointOffset,
+                generatedConnector.EndPosition);
+            return connectorGeometry;
         }
 
         private OrbitWatchMarker CreateWatchMarker(float normalizedOrbitPosition, Vector3 watchPoint)

@@ -5,11 +5,19 @@ namespace Gley.CameraSystem
 {
     public class ThreeBodyClosedBezierOrbit
     {
+        private readonly List<GeneratedOrbitConnectorPair> connectorPairs = new List<GeneratedOrbitConnectorPair>();
+        private readonly List<Vector3> bodyOffsets = new List<Vector3>();
+        private readonly List<VehicleProfile> bodyProfiles = new List<VehicleProfile>();
         private readonly LinearOrbitComposer composer;
-        private readonly ClosedBezierOrbit leadSourceOrbit;
-        private readonly ClosedBezierOrbit middleSourceOrbit;
-        private readonly ClosedBezierOrbit rearSourceOrbit;
-        private readonly ThreeBodyOrbitReferenceLayout referenceLayout;
+        private readonly VehicleProfile leadVehicleProfile;
+        private readonly VehicleProfile middleVehicleProfile;
+        private readonly VehicleProfile rearVehicleProfile;
+        private readonly OrbitConnectorPairOverride leadMiddleConnectorOverride;
+        private readonly OrbitConnectorPairOverride middleRearConnectorOverride;
+        private ClosedBezierOrbit leadSourceOrbit;
+        private ClosedBezierOrbit middleSourceOrbit;
+        private ClosedBezierOrbit rearSourceOrbit;
+        private ThreeBodyOrbitReferenceLayout referenceLayout;
 
         public IReadOnlyList<AssembledBezierOrbitSegment> Segments => composer.Segments;
 
@@ -23,12 +31,23 @@ namespace Gley.CameraSystem
         public bool IsClosed => AssemblyResult == ThreeBodyClosedBezierOrbitAssemblyResult.Valid;
 
         public ThreeBodyClosedBezierOrbit(VehicleProfile leadVehicleProfile, VehicleProfile middleVehicleProfile, VehicleProfile rearVehicleProfile)
+            : this(leadVehicleProfile, middleVehicleProfile, rearVehicleProfile, null, null)
         {
-            leadSourceOrbit = CreateSourceOrbit(leadVehicleProfile);
-            middleSourceOrbit = CreateSourceOrbit(middleVehicleProfile);
-            rearSourceOrbit = CreateSourceOrbit(rearVehicleProfile);
-            referenceLayout = new ThreeBodyOrbitReferenceLayout(leadVehicleProfile, middleVehicleProfile, rearVehicleProfile);
-            composer = new LinearOrbitComposer(CreateProfiles(leadVehicleProfile, middleVehicleProfile, rearVehicleProfile), CreateOffsets(), CreateConnectors());
+        }
+
+        public ThreeBodyClosedBezierOrbit(VehicleProfile leadVehicleProfile, VehicleProfile middleVehicleProfile, VehicleProfile rearVehicleProfile, OrbitConnectorPairOverride leadMiddleOverride, OrbitConnectorPairOverride middleRearOverride)
+        {
+            this.leadVehicleProfile = leadVehicleProfile;
+            this.middleVehicleProfile = middleVehicleProfile;
+            this.rearVehicleProfile = rearVehicleProfile;
+            leadMiddleConnectorOverride = leadMiddleOverride;
+            middleRearConnectorOverride = middleRearOverride;
+            bodyProfiles.Add(leadVehicleProfile);
+            bodyProfiles.Add(middleVehicleProfile);
+            bodyProfiles.Add(rearVehicleProfile);
+            RefreshSourceOrbits();
+            RefreshAssemblyInputs();
+            composer = new LinearOrbitComposer(bodyProfiles, bodyOffsets, connectorPairs);
         }
 
         public Vector3 EvaluateLeadBodyLocalPosition(float distance)
@@ -53,7 +72,34 @@ namespace Gley.CameraSystem
 
         public void Rebuild()
         {
+            RefreshSourceOrbits();
+            RefreshAssemblyInputs();
             composer.Rebuild();
+        }
+
+        private void RefreshSourceOrbits()
+        {
+            leadSourceOrbit = CreateSourceOrbit(leadVehicleProfile);
+            middleSourceOrbit = CreateSourceOrbit(middleVehicleProfile);
+            rearSourceOrbit = CreateSourceOrbit(rearVehicleProfile);
+        }
+
+        private void RefreshAssemblyInputs()
+        {
+            referenceLayout = new ThreeBodyOrbitReferenceLayout(leadVehicleProfile, middleVehicleProfile, rearVehicleProfile, leadMiddleConnectorOverride, middleRearConnectorOverride);
+            bodyOffsets.Clear();
+            connectorPairs.Clear();
+            bodyOffsets.Add(Vector3.zero);
+            bodyOffsets.Add(Vector3.zero);
+            bodyOffsets.Add(Vector3.zero);
+
+            if (referenceLayout.LayoutResult == ThreeBodyOrbitReferenceLayoutResult.Valid)
+            {
+                bodyOffsets[1] = referenceLayout.MiddleBodyLocalPosition;
+                bodyOffsets[2] = referenceLayout.RearBodyLocalPosition;
+                connectorPairs.Add(referenceLayout.LeadMiddleConnectors);
+                connectorPairs.Add(referenceLayout.MiddleRearConnectors);
+            }
         }
 
         private ThreeBodyClosedBezierOrbitAssemblyResult GetAssemblyResult()
@@ -66,6 +112,16 @@ namespace Gley.CameraSystem
             if (referenceLayout.LayoutResult == ThreeBodyOrbitReferenceLayoutResult.MiddleRearConnectorGenerationFailed)
             {
                 return ThreeBodyClosedBezierOrbitAssemblyResult.MiddleRearConnectorGenerationFailed;
+            }
+
+            if (referenceLayout.LayoutResult == ThreeBodyOrbitReferenceLayoutResult.LeadMiddleConnectorOverrideInvalid)
+            {
+                return ThreeBodyClosedBezierOrbitAssemblyResult.LeadMiddleConnectorOverrideInvalid;
+            }
+
+            if (referenceLayout.LayoutResult == ThreeBodyOrbitReferenceLayoutResult.MiddleRearConnectorOverrideInvalid)
+            {
+                return ThreeBodyClosedBezierOrbitAssemblyResult.MiddleRearConnectorOverrideInvalid;
             }
 
             if (composer.AssemblyResult == LinearOrbitComposerAssemblyResult.Valid)
@@ -116,42 +172,5 @@ namespace Gley.CameraSystem
             return new ClosedBezierOrbit(profile.VehicleOrbit);
         }
 
-        private List<VehicleProfile> CreateProfiles(VehicleProfile leadProfile, VehicleProfile middleProfile, VehicleProfile rearProfile)
-        {
-            List<VehicleProfile> profiles = new List<VehicleProfile>();
-            profiles.Add(leadProfile);
-            profiles.Add(middleProfile);
-            profiles.Add(rearProfile);
-            return profiles;
-        }
-
-        private List<Vector3> CreateOffsets()
-        {
-            List<Vector3> offsets = new List<Vector3>();
-            offsets.Add(Vector3.zero);
-            offsets.Add(Vector3.zero);
-            offsets.Add(Vector3.zero);
-
-            if (referenceLayout.LayoutResult == ThreeBodyOrbitReferenceLayoutResult.Valid)
-            {
-                offsets[1] = referenceLayout.MiddleBodyLocalPosition;
-                offsets[2] = referenceLayout.RearBodyLocalPosition;
-            }
-
-            return offsets;
-        }
-
-        private List<GeneratedOrbitConnectorPair> CreateConnectors()
-        {
-            List<GeneratedOrbitConnectorPair> connectorPairs = new List<GeneratedOrbitConnectorPair>();
-
-            if (referenceLayout.LayoutResult == ThreeBodyOrbitReferenceLayoutResult.Valid)
-            {
-                connectorPairs.Add(referenceLayout.LeadMiddleConnectors);
-                connectorPairs.Add(referenceLayout.MiddleRearConnectors);
-            }
-
-            return connectorPairs;
-        }
     }
 }

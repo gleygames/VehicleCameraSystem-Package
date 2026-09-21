@@ -34,7 +34,6 @@ namespace Gley.CameraSystem
             bodyProfiles = profiles;
             bodyOffsets = offsets;
             connectorPairs = generatedConnectorPairs;
-            CreateSourceOrbits();
             Rebuild();
         }
 
@@ -168,7 +167,7 @@ namespace Gley.CameraSystem
 
         public void Rebuild()
         {
-            RebuildSourceOrbits();
+            CreateSourceOrbits();
             samples.Clear();
             retainedLeadSegmentMappings.Clear();
             segmentSources.Clear();
@@ -260,17 +259,6 @@ namespace Gley.CameraSystem
                 else
                 {
                     sourceOrbits.Add(new ClosedBezierOrbit(profile.VehicleOrbit));
-                }
-            }
-        }
-
-        private void RebuildSourceOrbits()
-        {
-            for (int orbitIndex = 0; orbitIndex < sourceOrbits.Count; orbitIndex++)
-            {
-                if (sourceOrbits[orbitIndex] != null)
-                {
-                    sourceOrbits[orbitIndex].Rebuild();
                 }
             }
         }
