@@ -11,3 +11,5 @@
 | 2026-09-18 | 6A | Newly authored orbits merge attached bodies by default; an orbit can explicitly remain root-only. |
 | 2026-09-18 | 6C | A camera inside a removed front-rear section maps to the midpoint of the rear profile's authored rear removable section. |
 | 2026-09-21 | 7 | For chain changes, preserve a camera position only when its exact body instance and retained source-orbit position survive. Map a removed section or replaced connector to the midpoint of the terminal body's rear removable section in the root component. |
+| 2026-09-21 | Workflow | One fresh task per bounded implementation step; Easy uses Terra High and Hard uses Astra High. Preserve the master design/plan and use individual step files with validation and handoff records. |
+| 2026-09-21 | Hard-task gate | On starting every Hard step/slice/task, announce its difficulty and recommended agent, stop, and wait for an explicit user reply to continue before implementation, tests or an in-depth code audit. The gate applies even when Astra High appears selected; this plan approval and earlier approvals do not release future gates. |
