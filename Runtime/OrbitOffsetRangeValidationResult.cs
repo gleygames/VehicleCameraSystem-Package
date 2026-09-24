@@ -4,6 +4,7 @@ namespace Gley.CameraSystem
     {
         Valid,
         InvalidHeightRange,
-        InvalidZoomRange
+        InvalidZoomRange,
+        InwardZoomExceedsCurvature
     }
 }

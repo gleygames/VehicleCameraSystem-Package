@@ -19,13 +19,16 @@ namespace Gley.CameraSystem
         private readonly List<float> bearingDistances = new List<float>();
         private readonly VehicleOrbit vehicleOrbit;
         private readonly WatchPointCurve watchPointCurve = new WatchPointCurve();
+        private readonly InwardZoomAnalyzer inwardZoomAnalyzer = new InwardZoomAnalyzer();
 
+        internal VehicleOrbit SourceOrbit => vehicleOrbit;
         public OrbitBearing Bearing { get; }
         public OrbitOffsetRangeValidationResult OffsetRangeValidationResult { get; private set; }
         public OrbitWatchMarkerValidationResult WatchMarkerValidationResult { get; private set; }
         public OrbitValidationResult ValidationResult { get; private set; }
         public OrbitRemovableSectionValidationResult RemovableSectionValidationResult { get; private set; }
         public float Length { get; private set; }
+        public float MaximumSafeInwardZoom { get; private set; }
         public bool IsClosed => ValidationResult == OrbitValidationResult.Valid;
 
         public ClosedBezierOrbit(VehicleOrbit orbit)
@@ -113,6 +116,7 @@ namespace Gley.CameraSystem
             bearingPositions.Clear();
             bearingDistances.Clear();
             Length = 0f;
+            MaximumSafeInwardZoom = float.PositiveInfinity;
             Bearing.Rebuild(bearingPositions, bearingDistances, Length);
             ValidationResult = ValidateOrbit();
             WatchMarkerValidationResult = ValidateWatchMarkers();
@@ -151,6 +155,11 @@ namespace Gley.CameraSystem
             }
 
             Bearing.Rebuild(bearingPositions, bearingDistances, Length);
+            MaximumSafeInwardZoom = inwardZoomAnalyzer.MaximumSafeInwardZoom(this);
+            if (OffsetRangeValidationResult == OrbitOffsetRangeValidationResult.Valid && vehicleOrbit.MaximumZoomOffset > MaximumSafeInwardZoom)
+            {
+                OffsetRangeValidationResult = OrbitOffsetRangeValidationResult.InwardZoomExceedsCurvature;
+            }
         }
 
         private OrbitRemovableSectionValidationResult ValidateRemovableSections()

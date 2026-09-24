@@ -6,6 +6,7 @@ namespace Gley.CameraSystem
     {
         private ClosedBezierOrbit closedBezierOrbit;
         private TwoBodyClosedBezierOrbit twoBodyClosedBezierOrbit;
+        private OrbitFrame orbitFrame;
         [SerializeField] private Camera assignedCamera;
         [SerializeField] private CameraViewPreset selectedViewPreset;
         [SerializeField] private Transform vehicleBody;
@@ -232,6 +233,10 @@ namespace Gley.CameraSystem
 
             ActiveViewPreset = viewPreset;
             IsActive = true;
+            if (ActiveViewPreset.ViewType == CameraViewType.Presentation)
+            {
+                orbitFrame = new OrbitFrame(vehicleBody, vehicleProfile.PrimaryOrbit.OrientationAdjustment);
+            }
 
             if (ActiveViewPreset.ViewType == CameraViewType.Presentation)
             {
@@ -267,6 +272,7 @@ namespace Gley.CameraSystem
             ActiveViewPreset = null;
             closedBezierOrbit = null;
             twoBodyClosedBezierOrbit = null;
+            orbitFrame = null;
             currentOrbitTravelSpeed = 0f;
             heightIntent = 0f;
             horizontalOrbitIntent = 0f;
@@ -354,7 +360,7 @@ namespace Gley.CameraSystem
                     return CameraSystemActivationResult.InvalidWatchMarkers;
                 }
 
-                if (orbit.OffsetRangeValidationResult != OrbitOffsetRangeValidationResult.Valid)
+                if (orbit.OffsetRangeValidationResult != OrbitOffsetRangeValidationResult.Valid && orbit.OffsetRangeValidationResult != OrbitOffsetRangeValidationResult.InwardZoomExceedsCurvature)
                 {
                     return CameraSystemActivationResult.InvalidOrbitOffsetRange;
                 }
@@ -424,21 +430,21 @@ namespace Gley.CameraSystem
 
             if (twoBodyClosedBezierOrbit != null)
             {
-                cameraPosition = twoBodyClosedBezierOrbit.EvaluateWorldPosition(vehicleBody, orbitDistance);
+                cameraPosition = orbitFrame.ToWorldPosition(twoBodyClosedBezierOrbit.EvaluateLeadBodyLocalPosition(orbitDistance));
                 inwardNormal = twoBodyClosedBezierOrbit.EvaluateLeadBodyLocalInwardNormal(orbitDistance);
                 watchPointLocalPosition = twoBodyClosedBezierOrbit.EvaluateLeadBodyLocalWatchPoint(orbitDistance);
             }
             else
             {
-                cameraPosition = closedBezierOrbit.EvaluateWorldPosition(vehicleBody, orbitDistance);
+                cameraPosition = orbitFrame.ToWorldPosition(closedBezierOrbit.EvaluateBodyLocalPosition(orbitDistance));
                 inwardNormal = closedBezierOrbit.EvaluateBodyLocalInwardNormal(orbitDistance);
                 watchPointLocalPosition = closedBezierOrbit.EvaluateBodyLocalWatchPoint(orbitDistance);
             }
 
             Vector3 watchPointPosition = vehicleBody.TransformPoint(watchPointLocalPosition);
 
-            cameraPosition += vehicleBody.up * heightOffset;
-            cameraPosition += vehicleBody.TransformDirection(inwardNormal) * zoomOffset;
+            cameraPosition += orbitFrame.Up * heightOffset;
+            cameraPosition += orbitFrame.ToWorldInwardNormal(inwardNormal) * zoomOffset;
             Vector3 watchDirection = watchPointPosition - cameraPosition;
 
             assignedCamera.transform.SetPositionAndRotation(cameraPosition, Quaternion.LookRotation(watchDirection, vehicleBody.up));
