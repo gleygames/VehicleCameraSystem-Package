@@ -508,8 +508,12 @@ namespace Gley.CameraSystem
                     return false;
                 }
 
-                if (sourceOrbits[bodyIndex].ValidationResult != OrbitValidationResult.Valid
-                    || sourceOrbits[bodyIndex].RemovableSectionValidationResult != OrbitRemovableSectionValidationResult.Valid)
+                if (sourceOrbits[bodyIndex].ValidationResult != OrbitValidationResult.Valid)
+                {
+                    return false;
+                }
+
+                if (bodyProfiles.Count > 1 && sourceOrbits[bodyIndex].RemovableSectionValidationResult != OrbitRemovableSectionValidationResult.Valid)
                 {
                     return false;
                 }

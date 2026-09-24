@@ -1,15 +1,35 @@
+using System;
+using System.Collections.Generic;
+using Gley.Common;
 using UnityEngine;
 
 namespace Gley.CameraSystem
 {
+    [DefaultExecutionOrder(10000)]
     public class CameraSystemController : MonoBehaviour
     {
-        private ClosedBezierOrbit closedBezierOrbit;
-        private OrbitFrame orbitFrame;
+        private const float MinimumAimDistance = 0.0001f;
+
+        private readonly List<Transform> chainBodies = new List<Transform>();
+        private readonly List<Transform> warnedBodies = new List<Transform>();
+        private readonly List<CameraOwnershipMarker> ownershipMarkers = new List<CameraOwnershipMarker>();
+        private readonly ChainOrbitBuilder chainOrbitBuilder = new ChainOrbitBuilder();
+        private readonly OrbitRemapper orbitRemapper = new OrbitRemapper();
+        private readonly StoredPoseResolver storedPoseResolver = new StoredPoseResolver();
+        private readonly MotionEstimator rootMotionEstimator = new MotionEstimator();
+
         [SerializeField] private Camera assignedCamera;
-        [SerializeField] private CameraViewPreset selectedViewPreset;
-        [SerializeField] private Transform vehicleBody;
-        [SerializeField] private VehicleProfile vehicleProfile;
+        [SerializeField] private VehicleCameraTarget target;
+        [SerializeField] private CameraUpdateMode updateMode;
+        private VehicleCameraTarget subscribedTarget;
+        private CameraOwnershipMarker ownershipMarker;
+        private VehicleViewEntry activeView;
+        private VehicleProfile rootProfile;
+        private VehicleOrbit activeOrbit;
+        private ChainOrbit chainOrbit;
+        private OrbitFrame orbitFrame;
+        private Transform rootBody;
+        [SerializeField] private string initialViewName;
         private float currentOrbitTravelSpeed;
         private float heightIntent;
         private float heightOffset;
@@ -17,62 +37,266 @@ namespace Gley.CameraSystem
         private float orbitDistance;
         private float zoomIntent;
         private float zoomOffset;
+        private int nextCommandId = 1;
+        private int runningCommandId;
+        private int builtChainVersion;
+        private bool isActive;
+        private bool isTargetLost;
+
+        public event Action<int, CommandEndResult> CommandEnded;
+        public event Action<int> ViewChanged;
+        public event Action TargetLost;
+        public event Action CameraLost;
+        public event Action<bool> NoClearPoseChanged;
 
         public Camera AssignedCamera => assignedCamera;
-        public CameraViewPreset ActiveViewPreset { get; private set; }
-        public CameraViewPreset SelectedViewPreset => selectedViewPreset;
-        public Transform VehicleBody => vehicleBody;
-        public VehicleProfile VehicleProfile => vehicleProfile;
-        public CameraSystemActivationResult LastActivationResult { get; private set; }
+        public VehicleCameraTarget Target => target;
+        public VehicleViewEntry ActiveView => activeView;
+        public CameraViewPreset ActivePreset
+        {
+            get
+            {
+                if (activeView == null)
+                {
+                    return null;
+                }
+
+                return activeView.Preset;
+            }
+        }
+        public CameraUpdateMode UpdateMode => updateMode;
+        public string InitialViewName => initialViewName;
         public float CurrentOrbitTravelSpeed => currentOrbitTravelSpeed;
         public float HeightOffset => heightOffset;
         public float OrbitDistance => orbitDistance;
         public float ZoomOffset => zoomOffset;
-        public bool IsActive { get; private set; }
+        public bool IsActive => isActive;
+        public bool IsTargetLost => isTargetLost;
 
         private void LateUpdate()
         {
-            UpdateCameraVisuals(Time.unscaledDeltaTime);
-        }
-
-        public void UpdateCameraVisuals(float deltaTime)
-        {
-            if (!IsActive)
+            if (updateMode != CameraUpdateMode.LateUpdate || !isActive)
             {
                 return;
             }
 
-            if (ActiveViewPreset.ViewType == CameraViewType.Fixed)
+            UpdateCameraFrame(GetFrameDeltaTime());
+        }
+
+        private void OnEnable()
+        {
+            if (!isActive || isTargetLost)
             {
-                ApplyFixedPose();
+                return;
             }
 
-            if (ActiveViewPreset.ViewType == CameraViewType.Presentation)
+            SubscribeToTarget();
+            if (target != null && target.ChainVersion != builtChainVersion)
             {
-                UpdateOrbitVisuals(deltaTime);
-                UpdateOffsetVisuals(deltaTime);
-                ApplyOrbitPose();
+                HandleChainChanged();
             }
         }
 
-        public void AssignCamera(Camera camera)
+        public void UpdateCameraFrame(float deltaTime)
         {
-            Release();
+            if (!isActive)
+            {
+                return;
+            }
+
+            if (assignedCamera == null)
+            {
+                HandleCameraLost();
+                return;
+            }
+
+            if (isTargetLost)
+            {
+                return;
+            }
+
+            if (!IsTargetAlive())
+            {
+                HandleTargetLost();
+                return;
+            }
+
+            rootMotionEstimator.UpdateMotionEstimate(GetScaledDeltaTime(deltaTime));
+            UpdateCommandsAndInput(deltaTime);
+            WriteCameraPose();
+        }
+
+        public void Configure(Camera camera, VehicleCameraTarget vehicleTarget, string viewName)
+        {
+            if (isActive)
+            {
+                ReportRejection($"{name}: Configure rejected: {CameraCommandResult.InvalidWhileActive}. Deactivate first.");
+                return;
+            }
+
             assignedCamera = camera;
+            target = vehicleTarget;
+            initialViewName = viewName;
         }
 
-        public void AssignVehicle(Transform body, VehicleProfile profile)
+        public CameraCommandResult SetCamera(Camera camera)
         {
-            Release();
-            selectedViewPreset = null;
-            vehicleBody = body;
-            vehicleProfile = profile;
+            if (isActive)
+            {
+                ReportRejection($"{name}: SetCamera rejected: {CameraCommandResult.InvalidWhileActive}. Deactivate first.");
+                return CameraCommandResult.InvalidWhileActive;
+            }
+
+            if (camera == null)
+            {
+                ReportRejection($"{name}: SetCamera rejected: {CameraCommandResult.MissingCamera}.");
+                return CameraCommandResult.MissingCamera;
+            }
+
+            assignedCamera = camera;
+            return CameraCommandResult.Accepted;
         }
 
-        public void SelectViewPreset(CameraViewPreset viewPreset)
+        public void SetUpdateMode(CameraUpdateMode mode)
         {
+            updateMode = mode;
+        }
+
+        public CameraCommandResult Activate()
+        {
+            int commandId;
+            return Activate(new TransitionOptions(TransitionMode.Snap), out commandId);
+        }
+
+        public CameraCommandResult Activate(TransitionOptions options, out int commandId)
+        {
+            commandId = 0;
+            if (assignedCamera == null)
+            {
+                ReportRejection($"{name}: Activate rejected: {CameraCommandResult.MissingCamera}.");
+                return CameraCommandResult.MissingCamera;
+            }
+
+            if (!IsTargetConfigured(target))
+            {
+                ReportRejection($"{name}: Activate rejected: {CameraCommandResult.MissingTarget}.");
+                return CameraCommandResult.MissingTarget;
+            }
+
+            CameraSystemController owner;
+            if (TryGetOtherOwner(out owner))
+            {
+                ReportRejection($"{name}: Activate rejected: camera in use. Camera '{assignedCamera.name}' is owned by '{owner.name}'.");
+                return CameraCommandResult.CameraInUse;
+            }
+
+            VehicleViewEntry view;
+            VehicleOrbit orbit;
+            ChainOrbit builtOrbit;
+            CameraCommandResult result = ValidateView(target, initialViewName, out view, out orbit, out builtOrbit);
+            if (result != CameraCommandResult.Accepted)
+            {
+                ReportRejection($"{name}: Activate of view '{initialViewName}' rejected: {result}.");
+                return result;
+            }
+
+            AcquireOwnership();
+            SubscribeToTarget();
+            isActive = true;
+            isTargetLost = false;
+            ApplyView(view, orbit, builtOrbit);
+            rootMotionEstimator.Configure(target, Vector3.zero);
+            WarnAboutRigidbodyInterpolation();
+            if (options.Mode != TransitionMode.Snap)
+            {
+                commandId = BeginCommand();
+            }
+
+            WriteCameraPose();
+            return CameraCommandResult.Accepted;
+        }
+
+        public void Deactivate()
+        {
+            if (!isActive)
+            {
+                return;
+            }
+
+            EndRunningCommand(CommandEndResult.Interrupted);
             Release();
-            selectedViewPreset = viewPreset;
+        }
+
+        public CameraCommandResult SelectView(string viewName)
+        {
+            if (!isActive)
+            {
+                ReportRejection($"{name}: SelectView '{viewName}' rejected: {CameraCommandResult.NotActive}.");
+                return CameraCommandResult.NotActive;
+            }
+
+            if (isTargetLost || !IsTargetAlive())
+            {
+                ReportRejection($"{name}: SelectView '{viewName}' rejected: {CameraCommandResult.MissingTarget}.");
+                return CameraCommandResult.MissingTarget;
+            }
+
+            VehicleViewEntry view;
+            VehicleOrbit orbit;
+            ChainOrbit builtOrbit;
+            CameraCommandResult result = ValidateView(target, viewName, out view, out orbit, out builtOrbit);
+            if (result != CameraCommandResult.Accepted)
+            {
+                ReportRejection($"{name}: SelectView '{viewName}' rejected: {result}.");
+                return result;
+            }
+
+            if (activeView != null && activeView.Id == view.Id)
+            {
+                return CameraCommandResult.Accepted;
+            }
+
+            EndRunningCommand(CommandEndResult.Replaced);
+            ApplyView(view, orbit, builtOrbit);
+            WriteCameraPose();
+            ViewChanged?.Invoke(view.Id);
+            return CameraCommandResult.Accepted;
+        }
+
+        public CameraCommandResult SetTarget(VehicleCameraTarget newTarget)
+        {
+            if (!isActive)
+            {
+                target = newTarget;
+                return CameraCommandResult.Accepted;
+            }
+
+            if (!IsTargetConfigured(newTarget))
+            {
+                ReportRejection($"{name}: SetTarget rejected: {CameraCommandResult.MissingTarget}.");
+                return CameraCommandResult.MissingTarget;
+            }
+
+            VehicleViewEntry view;
+            VehicleOrbit orbit;
+            ChainOrbit builtOrbit;
+            CameraCommandResult result = ValidateView(newTarget, activeView.Name, out view, out orbit, out builtOrbit);
+            if (result != CameraCommandResult.Accepted)
+            {
+                ReportRejection($"{name}: SetTarget '{newTarget.name}' with view '{activeView.Name}' rejected: {result}.");
+                return result;
+            }
+
+            EndRunningCommand(CommandEndResult.Replaced);
+            UnsubscribeFromTarget();
+            target = newTarget;
+            SubscribeToTarget();
+            isTargetLost = false;
+            ApplyView(view, orbit, builtOrbit);
+            rootMotionEstimator.Configure(target, Vector3.zero);
+            WarnAboutRigidbodyInterpolation();
+            WriteCameraPose();
+            return CameraCommandResult.Accepted;
         }
 
         public void SetHorizontalOrbitIntent(float intent)
@@ -95,152 +319,258 @@ namespace Gley.CameraSystem
             zoomIntent = Mathf.Clamp(intent, -1f, 1f);
         }
 
-        public CameraSystemActivationResult Activate()
+        private float GetFrameDeltaTime()
         {
-            CameraViewPreset viewPreset = ResolveActivationViewPreset();
-            CameraSystemActivationResult activationResult = ValidateActivation(viewPreset);
-            LastActivationResult = activationResult;
-
-            if (activationResult != CameraSystemActivationResult.Succeeded)
+            CameraViewPreset preset = ActivePreset;
+            if (preset != null && preset.TimeSource == CameraTimeSource.Scaled)
             {
-                Release();
-                LastActivationResult = activationResult;
-                return activationResult;
+                return Time.deltaTime;
             }
 
-            ActiveViewPreset = viewPreset;
-            IsActive = true;
-            if (ActiveViewPreset.ViewType == CameraViewType.Presentation)
-            {
-                orbitFrame = new OrbitFrame(vehicleBody, vehicleProfile.PrimaryOrbit.OrientationAdjustment);
-            }
-
-            if (ActiveViewPreset.ViewType == CameraViewType.Presentation)
-            {
-                heightOffset = Mathf.Clamp(heightOffset, vehicleProfile.PrimaryOrbit.MinimumHeightOffset, vehicleProfile.PrimaryOrbit.MaximumHeightOffset);
-                zoomOffset = Mathf.Clamp(zoomOffset, vehicleProfile.PrimaryOrbit.MinimumZoomOffset, vehicleProfile.PrimaryOrbit.MaximumZoomOffset);
-            }
-
-            if (ActiveViewPreset.ViewType == CameraViewType.Fixed)
-            {
-                ApplyFixedPose();
-            }
-
-            if (ActiveViewPreset.ViewType == CameraViewType.Presentation)
-            {
-                closedBezierOrbit = new ClosedBezierOrbit(vehicleProfile.PrimaryOrbit);
-
-                ApplyOrbitPose();
-            }
-
-            return activationResult;
+            return Time.unscaledDeltaTime;
         }
 
-        public void Release()
+        private void SubscribeToTarget()
         {
-            IsActive = false;
-            ActiveViewPreset = null;
-            closedBezierOrbit = null;
+            if (ReferenceEquals(subscribedTarget, target))
+            {
+                return;
+            }
+
+            UnsubscribeFromTarget();
+            if (target == null)
+            {
+                return;
+            }
+
+            target.ChainChanged += HandleChainChanged;
+            target.Destroyed += HandleTargetDestroyed;
+            subscribedTarget = target;
+        }
+
+        private void UnsubscribeFromTarget()
+        {
+            if (ReferenceEquals(subscribedTarget, null))
+            {
+                return;
+            }
+
+            subscribedTarget.ChainChanged -= HandleChainChanged;
+            subscribedTarget.Destroyed -= HandleTargetDestroyed;
+            subscribedTarget = null;
+        }
+
+        private void HandleChainChanged()
+        {
+            if (!isActive || isTargetLost)
+            {
+                return;
+            }
+
+            if (!IsTargetAlive())
+            {
+                HandleTargetLost();
+                return;
+            }
+
+            Transform previousRoot = rootBody;
+            builtChainVersion = target.ChainVersion;
+            rootBody = target.GetBody(target.RootIndex);
+            rootProfile = target.GetProfile(target.RootIndex);
+            RebuildChainBodies();
+            WarnAboutRigidbodyInterpolation();
+            if (previousRoot != rootBody)
+            {
+                rootMotionEstimator.Configure(target, Vector3.zero);
+            }
+
+            if (activeOrbit == null)
+            {
+                return;
+            }
+
+            ChainOrbit rebuiltOrbit = chainOrbitBuilder.Build(target, activeOrbit.Name);
+            if (!IsOrbitUsable(rebuiltOrbit))
+            {
+                chainOrbit = null;
+                orbitFrame = null;
+                ReportRejection($"{name}: the orbit '{activeOrbit.Name}' is invalid after the vehicle chain changed; the camera holds its pose.");
+                return;
+            }
+
+            float remappedDistance;
+            if (orbitRemapper.Remap(chainOrbit, orbitDistance, rebuiltOrbit, out remappedDistance) != OrbitRemapResult.InvalidNewOrbit)
+            {
+                orbitDistance = remappedDistance;
+            }
+
+            chainOrbit = rebuiltOrbit;
+            orbitFrame = new OrbitFrame(rootBody, activeOrbit.OrientationAdjustment);
+        }
+
+        private bool IsTargetAlive()
+        {
+            return target != null && target.IsRootAlive && rootBody != null;
+        }
+
+        private void HandleTargetLost()
+        {
+            if (isTargetLost)
+            {
+                return;
+            }
+
+            isTargetLost = true;
+            EndRunningCommand(CommandEndResult.TargetLost);
+            UnsubscribeFromTarget();
+            ReportRejection($"{name}: target lost. The vehicle target or its root body was destroyed; the camera holds its last pose.");
+            TargetLost?.Invoke();
+        }
+
+        private void EndRunningCommand(CommandEndResult result)
+        {
+            if (runningCommandId == 0)
+            {
+                return;
+            }
+
+            int endedCommandId = runningCommandId;
+            runningCommandId = 0;
+            CommandEnded?.Invoke(endedCommandId, result);
+        }
+
+        private void ReportRejection(string message)
+        {
+            if (!Debug.isDebugBuild)
+            {
+                return;
+            }
+
+            CustomLogger.LogWarning(message, this);
+        }
+
+        private void RebuildChainBodies()
+        {
+            chainBodies.Clear();
+            if (activeOrbit != null && !activeOrbit.MergeWhenAttached)
+            {
+                chainBodies.Add(rootBody);
+                return;
+            }
+
+            for (int index = 0; index < target.BodyCount; index++)
+            {
+                chainBodies.Add(target.GetBody(index));
+            }
+        }
+
+        private void WarnAboutRigidbodyInterpolation()
+        {
+            for (int index = 0; index < target.BodyCount; index++)
+            {
+                Transform body = target.GetBody(index);
+                if (body == null || warnedBodies.Contains(body))
+                {
+                    continue;
+                }
+
+                Rigidbody bodyRigidbody = body.GetComponent<Rigidbody>();
+                if (bodyRigidbody != null && bodyRigidbody.interpolation == RigidbodyInterpolation.None)
+                {
+                    warnedBodies.Add(body);
+                    CustomLogger.LogWarning($"{body.name} has Rigidbody interpolation set to None; the camera may jitter. Set it to Interpolate.", body);
+                }
+            }
+        }
+
+        private bool IsOrbitUsable(ChainOrbit orbit)
+        {
+            return orbit != null && orbit.IsClosed && orbit.HasValidWatchMarkers;
+        }
+
+        private void HandleTargetDestroyed()
+        {
+            if (!isActive)
+            {
+                return;
+            }
+
+            HandleTargetLost();
+        }
+
+        private void HandleCameraLost()
+        {
+            EndRunningCommand(CommandEndResult.CameraLost);
+            Release();
+            ReportRejection($"{name}: camera lost. The assigned Camera was destroyed; the camera instance deactivated.");
+            CameraLost?.Invoke();
+        }
+
+        private void Release()
+        {
+            ReleaseOwnership();
+            UnsubscribeFromTarget();
+            isActive = false;
+            isTargetLost = false;
+            activeView = null;
+            activeOrbit = null;
+            rootProfile = null;
+            chainOrbit = null;
             orbitFrame = null;
+            rootBody = null;
+            chainBodies.Clear();
             currentOrbitTravelSpeed = 0f;
             heightIntent = 0f;
             horizontalOrbitIntent = 0f;
             zoomIntent = 0f;
         }
 
-        private CameraViewPreset ResolveActivationViewPreset()
+        private void ReleaseOwnership()
         {
-            if (selectedViewPreset != null)
+            if (ownershipMarker != null)
             {
-                return selectedViewPreset;
+                ownershipMarker.ClearOwner();
+                DestroyOwnedObject(ownershipMarker);
             }
 
-            if (vehicleProfile == null)
-            {
-                return null;
-            }
-
-            for (int viewIndex = 0; viewIndex < vehicleProfile.Views.Count; viewIndex++)
-            {
-                CameraViewPreset viewPreset = vehicleProfile.Views[viewIndex].Preset;
-
-                if (viewPreset != null && viewPreset.ViewType == CameraViewType.Fixed)
-                {
-                    return viewPreset;
-                }
-            }
-
-            return null;
+            ownershipMarker = null;
         }
 
-        private CameraSystemActivationResult ValidateActivation(CameraViewPreset viewPreset)
+        private void DestroyOwnedObject(UnityEngine.Object objectToDestroy)
         {
-            if (assignedCamera == null)
+            if (Application.isPlaying)
             {
-                return CameraSystemActivationResult.MissingCamera;
+                Destroy(objectToDestroy);
             }
-
-            if (vehicleBody == null)
+            else
             {
-                return CameraSystemActivationResult.MissingVehicleBody;
+                DestroyImmediate(objectToDestroy);
             }
-
-            if (vehicleProfile == null)
-            {
-                return CameraSystemActivationResult.MissingVehicleProfile;
-            }
-
-            if (viewPreset == null)
-            {
-                return CameraSystemActivationResult.MissingViewPreset;
-            }
-
-            if (viewPreset.ViewType == CameraViewType.Fixed)
-            {
-                if (vehicleProfile.FixedViewPose.CameraLocalPosition == vehicleProfile.FixedViewPose.WatchPointLocalPosition)
-                {
-                    return CameraSystemActivationResult.InvalidFixedView;
-                }
-
-                return CameraSystemActivationResult.Succeeded;
-            }
-
-            if (viewPreset.ViewType == CameraViewType.Presentation)
-            {
-                if (vehicleProfile.PrimaryOrbit == null)
-                {
-                    return CameraSystemActivationResult.MissingOrbit;
-                }
-
-                ClosedBezierOrbit orbit = new ClosedBezierOrbit(vehicleProfile.PrimaryOrbit);
-
-                if (orbit.ValidationResult != OrbitValidationResult.Valid)
-                {
-                    return CameraSystemActivationResult.InvalidOrbit;
-                }
-
-                if (orbit.WatchMarkerValidationResult == OrbitWatchMarkerValidationResult.MissingMarkers)
-                {
-                    return CameraSystemActivationResult.MissingWatchMarkers;
-                }
-
-                if (orbit.WatchMarkerValidationResult != OrbitWatchMarkerValidationResult.Valid)
-                {
-                    return CameraSystemActivationResult.InvalidWatchMarkers;
-                }
-
-                if (orbit.OffsetRangeValidationResult != OrbitOffsetRangeValidationResult.Valid && orbit.OffsetRangeValidationResult != OrbitOffsetRangeValidationResult.InwardZoomExceedsCurvature)
-                {
-                    return CameraSystemActivationResult.InvalidOrbitOffsetRange;
-                }
-
-                return CameraSystemActivationResult.Succeeded;
-            }
-
-            return CameraSystemActivationResult.UnsupportedViewPreset;
         }
 
-        private void UpdateOrbitVisuals(float deltaTime)
+        private float GetScaledDeltaTime(float deltaTime)
+        {
+            if (activeView.Preset.TimeSource == CameraTimeSource.Scaled)
+            {
+                return deltaTime;
+            }
+
+            return deltaTime * Time.timeScale;
+        }
+
+        private void UpdateCommandsAndInput(float deltaTime)
+        {
+            EndRunningCommand(CommandEndResult.Completed);
+            if (chainOrbit == null)
+            {
+                return;
+            }
+
+            UpdateManualOrbitTravel(deltaTime);
+            UpdateManualOffsets(deltaTime);
+        }
+
+        private void UpdateManualOrbitTravel(float deltaTime)
         {
             if (horizontalOrbitIntent == 0f)
             {
@@ -248,55 +578,267 @@ namespace Gley.CameraSystem
                 return;
             }
 
-            float targetOrbitTravelSpeed = ActiveViewPreset.OrbitMovement.ManualTravelSpeed * horizontalOrbitIntent;
+            OrbitMovementSettings movement = activeView.Preset.OrbitMovement;
+            float targetOrbitTravelSpeed = movement.ManualTravelSpeed * horizontalOrbitIntent;
 
-            if (ActiveViewPreset.OrbitMovement.StartResponseHalfLife <= 0f)
+            if (movement.StartResponseHalfLife <= 0f)
             {
                 currentOrbitTravelSpeed = targetOrbitTravelSpeed;
             }
             else
             {
-                float acceleration = ActiveViewPreset.OrbitMovement.ManualTravelSpeed / ActiveViewPreset.OrbitMovement.StartResponseHalfLife;
+                float acceleration = movement.ManualTravelSpeed / movement.StartResponseHalfLife;
                 currentOrbitTravelSpeed = Mathf.MoveTowards(currentOrbitTravelSpeed, targetOrbitTravelSpeed, acceleration * deltaTime);
             }
 
             orbitDistance += currentOrbitTravelSpeed * deltaTime;
         }
 
-        private void UpdateOffsetVisuals(float deltaTime)
+        private void UpdateManualOffsets(float deltaTime)
         {
-            heightOffset += ActiveViewPreset.OrbitMovement.HeightRate * heightIntent * deltaTime;
-            heightOffset = Mathf.Clamp(heightOffset, vehicleProfile.PrimaryOrbit.MinimumHeightOffset, vehicleProfile.PrimaryOrbit.MaximumHeightOffset);
-            zoomOffset += ActiveViewPreset.OrbitMovement.ZoomRate * zoomIntent * deltaTime;
-            zoomOffset = Mathf.Clamp(zoomOffset, vehicleProfile.PrimaryOrbit.MinimumZoomOffset, vehicleProfile.PrimaryOrbit.MaximumZoomOffset);
+            OrbitMovementSettings movement = activeView.Preset.OrbitMovement;
+            heightOffset += movement.HeightRate * heightIntent * deltaTime;
+            heightOffset = Mathf.Clamp(heightOffset, activeOrbit.MinimumHeightOffset, activeOrbit.MaximumHeightOffset);
+            zoomOffset += movement.ZoomRate * zoomIntent * deltaTime;
+            zoomOffset = Mathf.Clamp(zoomOffset, activeOrbit.MinimumZoomOffset, activeOrbit.MaximumZoomOffset);
         }
 
-        private void ApplyOrbitPose()
+        private void WriteCameraPose()
         {
-            Vector3 cameraPosition;
-            Vector3 inwardNormal;
-            Vector3 watchPointLocalPosition;
+            if (activeOrbit != null && chainOrbit == null)
+            {
+                return;
+            }
 
-            cameraPosition = orbitFrame.ToWorldPosition(closedBezierOrbit.EvaluateBodyLocalPosition(orbitDistance));
-            inwardNormal = closedBezierOrbit.EvaluateBodyLocalInwardNormal(orbitDistance);
-            watchPointLocalPosition = closedBezierOrbit.EvaluateBodyLocalWatchPoint(orbitDistance);
-
-            Vector3 watchPointPosition = vehicleBody.TransformPoint(watchPointLocalPosition);
-
-            cameraPosition += orbitFrame.Up * heightOffset;
-            cameraPosition += orbitFrame.ToWorldInwardNormal(inwardNormal) * zoomOffset;
-            Vector3 watchDirection = watchPointPosition - cameraPosition;
-
-            assignedCamera.transform.SetPositionAndRotation(cameraPosition, Quaternion.LookRotation(watchDirection, vehicleBody.up));
+            Vector3 targetPosition = ComputeTargetPose();
+            Vector3 laggedPosition = ApplyFollowLag(targetPosition);
+            Vector3 correctedPosition = ApplyCollision(laggedPosition);
+            Quaternion aim = ComputeAim(correctedPosition);
+            assignedCamera.transform.SetPositionAndRotation(correctedPosition, aim);
         }
 
-        private void ApplyFixedPose()
+        private Vector3 ComputeTargetPose()
         {
-            Vector3 cameraPosition = vehicleBody.TransformPoint(vehicleProfile.FixedViewPose.CameraLocalPosition);
-            Vector3 watchPointPosition = vehicleBody.TransformPoint(vehicleProfile.FixedViewPose.WatchPointLocalPosition);
-            Vector3 watchDirection = watchPointPosition - cameraPosition;
+            CameraViewType viewType = activeView.Preset.ViewType;
+            if (viewType == CameraViewType.Fixed)
+            {
+                return rootBody.TransformPoint(rootProfile.FixedViewPose.CameraLocalPosition);
+            }
 
-            assignedCamera.transform.SetPositionAndRotation(cameraPosition, Quaternion.LookRotation(watchDirection, vehicleBody.up));
+            if (viewType == CameraViewType.Interior)
+            {
+                return rootBody.TransformPoint(rootProfile.Seat.EyeLocalPosition);
+            }
+
+            Vector3 position = orbitFrame.ToWorldPosition(chainOrbit.EvaluateRootLocalPosition(orbitDistance));
+            position += orbitFrame.ToWorldInwardNormal(chainOrbit.EvaluateRootLocalInwardNormal(orbitDistance)) * zoomOffset;
+            position += orbitFrame.Up * heightOffset;
+            return position;
+        }
+
+        private Vector3 ApplyFollowLag(Vector3 targetPosition)
+        {
+            return targetPosition;
+        }
+
+        private Vector3 ApplyCollision(Vector3 smoothedPosition)
+        {
+            return smoothedPosition;
+        }
+
+        private Quaternion ComputeAim(Vector3 cameraPosition)
+        {
+            CameraViewType viewType = activeView.Preset.ViewType;
+            if (viewType == CameraViewType.Interior)
+            {
+                return rootBody.rotation;
+            }
+
+            Vector3 watchPoint;
+            if (viewType == CameraViewType.Fixed)
+            {
+                watchPoint = rootBody.TransformPoint(rootProfile.FixedViewPose.WatchPointLocalPosition);
+            }
+            else if (activeView.Preset.AimFrame == AimFrame.OwnerBody)
+            {
+                watchPoint = chainOrbit.EvaluateWorldWatchPointOwnerFrame(orbitDistance, chainBodies);
+            }
+            else
+            {
+                watchPoint = rootBody.TransformPoint(chainOrbit.EvaluateRootLocalWatchPoint(orbitDistance));
+            }
+
+            Vector3 watchDirection = watchPoint - cameraPosition;
+            if (watchDirection.sqrMagnitude < MinimumAimDistance)
+            {
+                return assignedCamera.transform.rotation;
+            }
+
+            return Quaternion.LookRotation(watchDirection, rootBody.up);
+        }
+
+        private bool IsTargetConfigured(VehicleCameraTarget candidate)
+        {
+            return candidate != null && candidate.IsRootAlive && candidate.BodyCount > 0;
+        }
+
+        private bool TryGetOtherOwner(out CameraSystemController owner)
+        {
+            owner = null;
+            assignedCamera.GetComponents(ownershipMarkers);
+            for (int index = 0; index < ownershipMarkers.Count; index++)
+            {
+                if (ownershipMarkers[index].BlocksActivation(this, assignedCamera))
+                {
+                    owner = ownershipMarkers[index].Owner;
+                    break;
+                }
+            }
+
+            ownershipMarkers.Clear();
+            return owner != null;
+        }
+
+        private CameraCommandResult ValidateView(VehicleCameraTarget candidate, string viewName, out VehicleViewEntry view, out VehicleOrbit orbit, out ChainOrbit builtOrbit)
+        {
+            orbit = null;
+            builtOrbit = null;
+            VehicleProfile profile = candidate.GetProfile(candidate.RootIndex);
+            if (profile == null || !profile.TryGetView(viewName, out view))
+            {
+                view = null;
+                return CameraCommandResult.ViewNotAvailable;
+            }
+
+            CameraViewPreset preset = view.Preset;
+            if (preset == null)
+            {
+                return CameraCommandResult.ViewInvalid;
+            }
+
+            if (preset.ViewType == CameraViewType.Fixed && profile.FixedViewPose.CameraLocalPosition == profile.FixedViewPose.WatchPointLocalPosition)
+            {
+                return CameraCommandResult.ViewInvalid;
+            }
+
+            if (preset.ViewType == CameraViewType.Driving || preset.ViewType == CameraViewType.Presentation)
+            {
+                if (!profile.TryGetOrbit(view.OrbitId, out orbit))
+                {
+                    return CameraCommandResult.ViewInvalid;
+                }
+
+                builtOrbit = chainOrbitBuilder.Build(candidate, orbit.Name);
+                if (!IsOrbitUsable(builtOrbit))
+                {
+                    return CameraCommandResult.ViewInvalid;
+                }
+
+                OrbitOffsetRangeValidationResult rangeResult = new ClosedBezierOrbit(orbit).OffsetRangeValidationResult;
+                if (rangeResult != OrbitOffsetRangeValidationResult.Valid && rangeResult != OrbitOffsetRangeValidationResult.InwardZoomExceedsCurvature)
+                {
+                    return CameraCommandResult.ViewInvalid;
+                }
+            }
+
+            if (preset.FormatVersion > CameraViewPreset.CurrentFormatVersion)
+            {
+                return CameraCommandResult.AssetNeedsUpgrade;
+            }
+
+            for (int index = 0; index < candidate.BodyCount; index++)
+            {
+                VehicleProfile bodyProfile = candidate.GetProfile(index);
+                if (bodyProfile != null && bodyProfile.FormatVersion > VehicleProfile.CurrentFormatVersion)
+                {
+                    return CameraCommandResult.AssetNeedsUpgrade;
+                }
+            }
+
+            return CameraCommandResult.Accepted;
+        }
+
+        private void AcquireOwnership()
+        {
+            ownershipMarker = null;
+            assignedCamera.GetComponents(ownershipMarkers);
+            for (int index = 0; index < ownershipMarkers.Count; index++)
+            {
+                CameraOwnershipMarker marker = ownershipMarkers[index];
+                if (marker.Owner == this && ownershipMarker == null)
+                {
+                    ownershipMarker = marker;
+                }
+                else
+                {
+                    marker.ClearOwner();
+                    DestroyOwnedObject(marker);
+                }
+            }
+
+            ownershipMarkers.Clear();
+            if (ownershipMarker == null)
+            {
+                ownershipMarker = assignedCamera.gameObject.AddComponent<CameraOwnershipMarker>();
+                ownershipMarker.Configure(this);
+            }
+        }
+
+        private void ApplyView(VehicleViewEntry view, VehicleOrbit orbit, ChainOrbit builtOrbit)
+        {
+            activeView = view;
+            activeOrbit = orbit;
+            chainOrbit = builtOrbit;
+            builtChainVersion = target.ChainVersion;
+            rootBody = target.GetBody(target.RootIndex);
+            rootProfile = target.GetProfile(target.RootIndex);
+            RebuildChainBodies();
+            currentOrbitTravelSpeed = 0f;
+            orbitFrame = null;
+            orbitDistance = 0f;
+            zoomOffset = 0f;
+            heightOffset = 0f;
+            if (chainOrbit == null)
+            {
+                return;
+            }
+
+            orbitFrame = new OrbitFrame(rootBody, orbit.OrientationAdjustment);
+            LivePose pose = storedPoseResolver.Resolve(view.DefaultPose, chainOrbit, orbit, 0f);
+            orbitDistance = pose.OrbitDistance;
+            zoomOffset = pose.ZoomOffset;
+            heightOffset = pose.HeightOffset;
+        }
+
+        private int BeginCommand()
+        {
+            EndRunningCommand(CommandEndResult.Replaced);
+            runningCommandId = nextCommandId;
+            nextCommandId++;
+            return runningCommandId;
+        }
+
+        [ContextMenu("Activate")]
+        private void ActivateFromContextMenu()
+        {
+            Activate();
+        }
+
+        [ContextMenu("Deactivate")]
+        private void DeactivateFromContextMenu()
+        {
+            Deactivate();
+        }
+
+        private void OnDisable()
+        {
+            UnsubscribeFromTarget();
+        }
+
+        private void OnDestroy()
+        {
+            Deactivate();
+            UnsubscribeFromTarget();
         }
     }
 }
