@@ -18,6 +18,7 @@ namespace Gley.CameraSystem
         private readonly StoredPoseResolver storedPoseResolver = new StoredPoseResolver();
         private readonly MotionEstimator rootMotionEstimator = new MotionEstimator();
         private readonly StraightLineTransition activationTransition = new StraightLineTransition();
+        private readonly CameraRenderingState renderingState = new CameraRenderingState();
 
         [SerializeField] private Camera assignedCamera;
         [SerializeField] private VehicleCameraTarget target;
@@ -82,7 +83,7 @@ namespace Gley.CameraSystem
                 return;
             }
 
-            UpdateCameraFrame(GetFrameDeltaTime());
+            UpdateCameraFrame(GetFrameDeltaTime(), Time.deltaTime);
         }
 
         private void OnEnable()
@@ -106,26 +107,7 @@ namespace Gley.CameraSystem
                 return;
             }
 
-            if (assignedCamera == null)
-            {
-                HandleCameraLost();
-                return;
-            }
-
-            if (isTargetLost)
-            {
-                return;
-            }
-
-            if (!IsTargetAlive())
-            {
-                HandleTargetLost();
-                return;
-            }
-
-            rootMotionEstimator.UpdateMotionEstimate(GetScaledDeltaTime(deltaTime));
-            UpdateCommandsAndInput(deltaTime);
-            WriteCameraPose(deltaTime);
+            UpdateCameraFrame(deltaTime, GetScaledDeltaTime(deltaTime));
         }
 
         public void Configure(Camera camera, VehicleCameraTarget vehicleTarget, string viewName)
@@ -202,6 +184,11 @@ namespace Gley.CameraSystem
             {
                 ReportRejection($"{name}: Activate of view '{initialViewName}' rejected: {result}.");
                 return result;
+            }
+
+            if (!isActive)
+            {
+                renderingState.RecordBaseline(assignedCamera);
             }
 
             AcquireOwnership();
@@ -352,6 +339,45 @@ namespace Gley.CameraSystem
             }
 
             return Time.unscaledDeltaTime;
+        }
+
+        private void UpdateCameraFrame(float deltaTime, float scaledDeltaTime)
+        {
+            if (!isActive)
+            {
+                return;
+            }
+
+            if (assignedCamera == null)
+            {
+                HandleCameraLost();
+                return;
+            }
+
+            if (isTargetLost)
+            {
+                return;
+            }
+
+            if (!IsTargetAlive())
+            {
+                HandleTargetLost();
+                return;
+            }
+
+            rootMotionEstimator.UpdateMotionEstimate(scaledDeltaTime);
+            UpdateCommandsAndInput(deltaTime);
+            WriteCameraPose(deltaTime);
+        }
+
+        private float GetScaledDeltaTime(float deltaTime)
+        {
+            if (activeView.Preset.TimeSource == CameraTimeSource.Scaled)
+            {
+                return deltaTime;
+            }
+
+            return deltaTime * Time.timeScale;
         }
 
         private void SubscribeToTarget()
@@ -533,6 +559,7 @@ namespace Gley.CameraSystem
 
         private void Release()
         {
+            renderingState.Restore();
             ReleaseOwnership();
             UnsubscribeFromTarget();
             isActive = false;
@@ -572,16 +599,6 @@ namespace Gley.CameraSystem
             {
                 DestroyImmediate(objectToDestroy);
             }
-        }
-
-        private float GetScaledDeltaTime(float deltaTime)
-        {
-            if (activeView.Preset.TimeSource == CameraTimeSource.Scaled)
-            {
-                return deltaTime;
-            }
-
-            return deltaTime * Time.timeScale;
         }
 
         private void UpdateCommandsAndInput(float deltaTime)
@@ -836,6 +853,7 @@ namespace Gley.CameraSystem
             activeView = view;
             activeOrbit = orbit;
             chainOrbit = builtOrbit;
+            renderingState.ApplyRenderingSettings(view.Preset.Rendering);
             builtChainVersion = target.ChainVersion;
             rootBody = target.GetBody(target.RootIndex);
             rootProfile = target.GetProfile(target.RootIndex);
