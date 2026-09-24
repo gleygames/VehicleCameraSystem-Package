@@ -322,7 +322,13 @@ namespace Gley.CameraSystem
                 return CameraCommandResult.PointNotFound;
             }
 
-            int neighbour = FindCurrentOrderedIndex() + step;
+            int current = FindCurrentOrderedIndex();
+            if (current < 0)
+            {
+                return PlanRoute(orderedPoints[FindNearestIndex(step)], direction);
+            }
+
+            int neighbour = current + step;
             if (neighbour < 0 || neighbour >= count)
             {
                 if (!wrap)
@@ -351,7 +357,7 @@ namespace Gley.CameraSystem
 
             if (orderedIndex < 0)
             {
-                orderedIndex = FindNearestAheadIndex();
+                orderedIndex = FindPointAtCameraIndex();
             }
 
             return orderedIndex;
@@ -376,24 +382,37 @@ namespace Gley.CameraSystem
             return -1;
         }
 
-        private int FindNearestAheadIndex()
+        private int FindPointAtCameraIndex()
         {
             IReadOnlyList<MergedMarker> markers = orbit.MergedMarkers;
             float length = orbit.Length;
             float current = Mathf.Repeat(movement.OrbitDistance, length);
-            float nearestAhead = float.MaxValue;
+            for (int index = 0; index < orderedPoints.Count; index++)
+            {
+                float gap = Mathf.Repeat(markers[orderedPoints[index]].OrbitDistance - current, length);
+                if (gap <= ArrivalTolerance || gap >= length - ArrivalTolerance)
+                {
+                    return index;
+                }
+            }
+
+            return -1;
+        }
+
+        private int FindNearestIndex(int step)
+        {
+            IReadOnlyList<MergedMarker> markers = orbit.MergedMarkers;
+            float length = orbit.Length;
+            float current = Mathf.Repeat(movement.OrbitDistance, length);
+            float searchSign = movement.IncreasingBearingSign * step;
+            float nearestGap = float.MaxValue;
             int nearestIndex = 0;
             for (int index = 0; index < orderedPoints.Count; index++)
             {
-                float ahead = Mathf.Repeat((markers[orderedPoints[index]].OrbitDistance - current) * movement.IncreasingBearingSign, length);
-                if (ahead >= length - ArrivalTolerance)
+                float gap = Mathf.Repeat((markers[orderedPoints[index]].OrbitDistance - current) * searchSign, length);
+                if (gap < nearestGap)
                 {
-                    ahead = 0f;
-                }
-
-                if (ahead < nearestAhead)
-                {
-                    nearestAhead = ahead;
+                    nearestGap = gap;
                     nearestIndex = index;
                 }
             }
