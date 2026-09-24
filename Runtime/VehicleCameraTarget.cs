@@ -13,6 +13,7 @@ namespace Gley.CameraSystem
         [SerializeField] private List<OrbitConnectorPairOverride> pairOverrides = new List<OrbitConnectorPairOverride>();
         [SerializeField] private Transform rootBody;
         [SerializeField] private VehicleProfile rootProfile;
+        [SerializeField] private float estimateFilterHalfLife = 0.05f;
         private Vector3 suppliedAcceleration;
         private float suppliedSpeed;
         private float turnHint;
@@ -28,6 +29,7 @@ namespace Gley.CameraSystem
         public event Action Destroyed;
 
         public Vector3 SuppliedAcceleration => suppliedAcceleration;
+        public float EstimateFilterHalfLife => estimateFilterHalfLife;
         public float SuppliedSpeed => suppliedSpeed;
         public float TurnHint => turnHint;
         public int BodyCount
