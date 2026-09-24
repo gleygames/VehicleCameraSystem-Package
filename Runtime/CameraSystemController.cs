@@ -8,8 +8,6 @@ namespace Gley.CameraSystem
     [DefaultExecutionOrder(10000)]
     public class CameraSystemController : MonoBehaviour
     {
-        private const float MinimumAimDistance = 0.0001f;
-
         private readonly List<Transform> chainBodies = new List<Transform>();
         private readonly List<Transform> warnedBodies = new List<Transform>();
         private readonly List<CameraOwnershipMarker> ownershipMarkers = new List<CameraOwnershipMarker>();
@@ -19,6 +17,9 @@ namespace Gley.CameraSystem
         private readonly MotionEstimator rootMotionEstimator = new MotionEstimator();
         private readonly StraightLineTransition activationTransition = new StraightLineTransition();
         private readonly CameraRenderingState renderingState = new CameraRenderingState();
+        private readonly OrbitMovement orbitMovement = new OrbitMovement();
+        private readonly DistanceComposer distanceComposer = new DistanceComposer();
+        private readonly OrbitAim orbitAim = new OrbitAim();
 
         [SerializeField] private Camera assignedCamera;
         [SerializeField] private VehicleCameraTarget target;
@@ -31,14 +32,9 @@ namespace Gley.CameraSystem
         private ChainOrbit chainOrbit;
         private OrbitFrame orbitFrame;
         private Transform rootBody;
+        private AimFrame aimFrame;
         [SerializeField] private string initialViewName;
-        private float currentOrbitTravelSpeed;
-        private float heightIntent;
-        private float heightOffset;
-        private float horizontalOrbitIntent;
-        private float orbitDistance;
-        private float zoomIntent;
-        private float zoomOffset;
+        [SerializeField, Min(0f)] private float maximumFrameDeltaTime = 0.1f;
         private int nextCommandId = 1;
         private int runningCommandId;
         private int builtChainVersion;
@@ -68,11 +64,14 @@ namespace Gley.CameraSystem
             }
         }
         public CameraUpdateMode UpdateMode => updateMode;
+        public LivePose CurrentPose => orbitMovement.Pose;
+        public AimFrame AimFrame => aimFrame;
         public string InitialViewName => initialViewName;
-        public float CurrentOrbitTravelSpeed => currentOrbitTravelSpeed;
-        public float HeightOffset => heightOffset;
-        public float OrbitDistance => orbitDistance;
-        public float ZoomOffset => zoomOffset;
+        public float MaximumFrameDeltaTime => maximumFrameDeltaTime;
+        public float CurrentOrbitTravelSpeed => orbitMovement.TravelSpeed;
+        public float HeightOffset => orbitMovement.HeightOffset;
+        public float OrbitDistance => orbitMovement.OrbitDistance;
+        public float ZoomOffset => orbitMovement.PlayerZoom;
         public bool IsActive => isActive;
         public bool IsTargetLost => isTargetLost;
 
@@ -310,35 +309,78 @@ namespace Gley.CameraSystem
             return CameraCommandResult.Accepted;
         }
 
+        public void SetHeldIntent(float horizontal, float vertical, float zoom)
+        {
+            orbitMovement.SetHeldIntent(horizontal, vertical, zoom);
+        }
+
         public void SetHorizontalOrbitIntent(float intent)
         {
-            horizontalOrbitIntent = Mathf.Clamp(intent, -1f, 1f);
-
-            if (horizontalOrbitIntent == 0f)
-            {
-                currentOrbitTravelSpeed = 0f;
-            }
+            orbitMovement.SetHeldIntent(intent, orbitMovement.VerticalIntent, orbitMovement.ZoomIntent);
         }
 
         public void SetHeightIntent(float intent)
         {
-            heightIntent = Mathf.Clamp(intent, -1f, 1f);
+            orbitMovement.SetHeldIntent(orbitMovement.HorizontalIntent, intent, orbitMovement.ZoomIntent);
         }
 
         public void SetZoomIntent(float intent)
         {
-            zoomIntent = Mathf.Clamp(intent, -1f, 1f);
+            orbitMovement.SetHeldIntent(orbitMovement.HorizontalIntent, orbitMovement.VerticalIntent, intent);
+        }
+
+        public void AddDrag(Vector2 normalizedDelta)
+        {
+            if (!CanApplyManualOrbitInput())
+            {
+                return;
+            }
+
+            orbitMovement.AddDrag(normalizedDelta);
+        }
+
+        public void AddPinch(float normalizedSpan)
+        {
+            if (!CanApplyManualOrbitInput())
+            {
+                return;
+            }
+
+            orbitMovement.AddPinch(normalizedSpan);
+        }
+
+        public CameraCommandResult SetAimFrame(AimFrame frame)
+        {
+            if (!isActive)
+            {
+                ReportRejection($"{name}: SetAimFrame {frame} rejected: {CameraCommandResult.NotActive}.");
+                return CameraCommandResult.NotActive;
+            }
+
+            aimFrame = frame;
+            return CameraCommandResult.Accepted;
+        }
+
+        private bool CanApplyManualOrbitInput()
+        {
+            return isActive && !isTargetLost && !isTransitioning && chainOrbit != null;
         }
 
         private float GetFrameDeltaTime()
         {
+            float deltaTime = Time.unscaledDeltaTime;
             CameraViewPreset preset = ActivePreset;
             if (preset != null && preset.TimeSource == CameraTimeSource.Scaled)
             {
-                return Time.deltaTime;
+                deltaTime = Time.deltaTime;
             }
 
-            return Time.unscaledDeltaTime;
+            if (maximumFrameDeltaTime > 0f)
+            {
+                deltaTime = Mathf.Min(deltaTime, maximumFrameDeltaTime);
+            }
+
+            return deltaTime;
         }
 
         private void UpdateCameraFrame(float deltaTime, float scaledDeltaTime)
@@ -448,6 +490,7 @@ namespace Gley.CameraSystem
                 return;
             }
 
+            float orbitDistance = orbitMovement.OrbitDistance;
             float remappedDistance;
             if (orbitRemapper.Remap(chainOrbit, orbitDistance, rebuiltOrbit, out remappedDistance) != OrbitRemapResult.InvalidNewOrbit)
             {
@@ -456,6 +499,7 @@ namespace Gley.CameraSystem
 
             chainOrbit = rebuiltOrbit;
             orbitFrame = new OrbitFrame(rootBody, activeOrbit.OrientationAdjustment);
+            orbitMovement.Configure(chainOrbit, activeOrbit, activeView.Preset.OrbitMovement, new LivePose(orbitDistance, orbitMovement.PlayerZoom, orbitMovement.HeightOffset));
         }
 
         private bool IsTargetAlive()
@@ -571,10 +615,8 @@ namespace Gley.CameraSystem
             orbitFrame = null;
             rootBody = null;
             chainBodies.Clear();
-            currentOrbitTravelSpeed = 0f;
-            heightIntent = 0f;
-            horizontalOrbitIntent = 0f;
-            zoomIntent = 0f;
+            orbitMovement.Clear();
+            orbitMovement.ClearHeldIntent();
             isTransitioning = false;
         }
 
@@ -608,41 +650,7 @@ namespace Gley.CameraSystem
                 return;
             }
 
-            UpdateManualOrbitTravel(deltaTime);
-            UpdateManualOffsets(deltaTime);
-        }
-
-        private void UpdateManualOrbitTravel(float deltaTime)
-        {
-            if (horizontalOrbitIntent == 0f)
-            {
-                currentOrbitTravelSpeed = 0f;
-                return;
-            }
-
-            OrbitMovementSettings movement = activeView.Preset.OrbitMovement;
-            float targetOrbitTravelSpeed = movement.ManualTravelSpeed * horizontalOrbitIntent;
-
-            if (movement.StartResponseHalfLife <= 0f)
-            {
-                currentOrbitTravelSpeed = targetOrbitTravelSpeed;
-            }
-            else
-            {
-                float acceleration = movement.ManualTravelSpeed / movement.StartResponseHalfLife;
-                currentOrbitTravelSpeed = Mathf.MoveTowards(currentOrbitTravelSpeed, targetOrbitTravelSpeed, acceleration * deltaTime);
-            }
-
-            orbitDistance += currentOrbitTravelSpeed * deltaTime;
-        }
-
-        private void UpdateManualOffsets(float deltaTime)
-        {
-            OrbitMovementSettings movement = activeView.Preset.OrbitMovement;
-            heightOffset += movement.HeightRate * heightIntent * deltaTime;
-            heightOffset = Mathf.Clamp(heightOffset, activeOrbit.MinimumHeightOffset, activeOrbit.MaximumHeightOffset);
-            zoomOffset += movement.ZoomRate * zoomIntent * deltaTime;
-            zoomOffset = Mathf.Clamp(zoomOffset, activeOrbit.MinimumZoomOffset, activeOrbit.MaximumZoomOffset);
+            orbitMovement.UpdateOrbitMovement(deltaTime);
         }
 
         private void WriteCameraPose(float deltaTime)
@@ -694,9 +702,11 @@ namespace Gley.CameraSystem
                 return rootBody.TransformPoint(rootProfile.Seat.EyeLocalPosition);
             }
 
+            float orbitDistance = orbitMovement.OrbitDistance;
+            float zoom = distanceComposer.ComposeZoom(orbitMovement.PlayerZoom, 0f, activeOrbit);
             Vector3 position = orbitFrame.ToWorldPosition(chainOrbit.EvaluateRootLocalPosition(orbitDistance));
-            position += orbitFrame.ToWorldInwardNormal(chainOrbit.EvaluateRootLocalInwardNormal(orbitDistance)) * zoomOffset;
-            position += orbitFrame.Up * heightOffset;
+            position += orbitFrame.ToWorldInwardNormal(chainOrbit.EvaluateRootLocalInwardNormal(orbitDistance)) * zoom;
+            position += orbitFrame.Up * orbitMovement.HeightOffset;
             return position;
         }
 
@@ -718,27 +728,16 @@ namespace Gley.CameraSystem
                 return rootBody.rotation;
             }
 
-            Vector3 watchPoint;
+            float imageRollFollow = activeView.Preset.OrbitMovement.ImageRollFollow;
+            Quaternion fallbackRotation = assignedCamera.transform.rotation;
             if (viewType == CameraViewType.Fixed)
             {
-                watchPoint = rootBody.TransformPoint(rootProfile.FixedViewPose.WatchPointLocalPosition);
-            }
-            else if (activeView.Preset.AimFrame == AimFrame.OwnerBody)
-            {
-                watchPoint = chainOrbit.EvaluateWorldWatchPointOwnerFrame(orbitDistance, chainBodies);
-            }
-            else
-            {
-                watchPoint = rootBody.TransformPoint(chainOrbit.EvaluateRootLocalWatchPoint(orbitDistance));
+                Vector3 fixedWatchPoint = rootBody.TransformPoint(rootProfile.FixedViewPose.WatchPointLocalPosition);
+                return orbitAim.ComputeAim(cameraPosition, fixedWatchPoint, rootBody.up, imageRollFollow, fallbackRotation);
             }
 
-            Vector3 watchDirection = watchPoint - cameraPosition;
-            if (watchDirection.sqrMagnitude < MinimumAimDistance)
-            {
-                return assignedCamera.transform.rotation;
-            }
-
-            return Quaternion.LookRotation(watchDirection, rootBody.up);
+            Vector3 watchPoint = orbitAim.EvaluateWatchPoint(chainOrbit, orbitMovement.OrbitDistance, aimFrame, rootBody, chainBodies);
+            return orbitAim.ComputeAim(cameraPosition, watchPoint, orbitFrame.Up, imageRollFollow, fallbackRotation);
         }
 
         private bool IsTargetConfigured(VehicleCameraTarget candidate)
@@ -858,11 +857,9 @@ namespace Gley.CameraSystem
             rootBody = target.GetBody(target.RootIndex);
             rootProfile = target.GetProfile(target.RootIndex);
             RebuildChainBodies();
-            currentOrbitTravelSpeed = 0f;
+            aimFrame = view.Preset.AimFrame;
             orbitFrame = null;
-            orbitDistance = 0f;
-            zoomOffset = 0f;
-            heightOffset = 0f;
+            orbitMovement.Clear();
             if (chainOrbit == null)
             {
                 return;
@@ -870,9 +867,7 @@ namespace Gley.CameraSystem
 
             orbitFrame = new OrbitFrame(rootBody, orbit.OrientationAdjustment);
             LivePose pose = storedPoseResolver.Resolve(view.DefaultPose, chainOrbit, orbit, 0f);
-            orbitDistance = pose.OrbitDistance;
-            zoomOffset = pose.ZoomOffset;
-            heightOffset = pose.HeightOffset;
+            orbitMovement.Configure(chainOrbit, orbit, view.Preset.OrbitMovement, pose);
         }
 
         private int BeginCommand()

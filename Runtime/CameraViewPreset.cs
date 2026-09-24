@@ -56,6 +56,16 @@ namespace Gley.CameraSystem
             orbitMovement.Configure(orbitMovement.ManualTravelSpeed, orbitMovement.StartResponseHalfLife, zoomSpeed, heightSpeed, orbitMovement.DragOrbit, orbitMovement.DragHeight, orbitMovement.Pinch, orbitMovement.AngleLimitsEnabled, orbitMovement.MinimumBearing, orbitMovement.MaximumBearing, orbitMovement.ImageRollFollow);
         }
 
+        public void ConfigureAngleLimits(bool useAngleLimits, float minimumBearing, float maximumBearing)
+        {
+            orbitMovement.Configure(orbitMovement.ManualTravelSpeed, orbitMovement.StartResponseHalfLife, orbitMovement.ZoomRate, orbitMovement.HeightRate, orbitMovement.DragOrbit, orbitMovement.DragHeight, orbitMovement.Pinch, useAngleLimits, minimumBearing, maximumBearing, orbitMovement.ImageRollFollow);
+        }
+
+        public void ConfigureImageRollFollow(float rollFollow)
+        {
+            orbitMovement.Configure(orbitMovement.ManualTravelSpeed, orbitMovement.StartResponseHalfLife, orbitMovement.ZoomRate, orbitMovement.HeightRate, orbitMovement.DragOrbit, orbitMovement.DragHeight, orbitMovement.Pinch, orbitMovement.AngleLimitsEnabled, orbitMovement.MinimumBearing, orbitMovement.MaximumBearing, rollFollow);
+        }
+
         public void ConfigureTimeSource(CameraTimeSource source)
         {
             timeSource = source;
