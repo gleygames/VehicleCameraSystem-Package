@@ -15,9 +15,12 @@ namespace Gley.CameraSystem
         private readonly List<OrbitArcLengthSample> samples = new List<OrbitArcLengthSample>();
         private readonly List<OrbitWatchMarker> watchMarkers = new List<OrbitWatchMarker>();
         private readonly List<WatchPointKey> watchPointKeys = new List<WatchPointKey>();
+        private readonly List<Vector3> bearingPositions = new List<Vector3>();
+        private readonly List<float> bearingDistances = new List<float>();
         private readonly VehicleOrbit vehicleOrbit;
         private readonly WatchPointCurve watchPointCurve = new WatchPointCurve();
 
+        public OrbitBearing Bearing { get; }
         public OrbitOffsetRangeValidationResult OffsetRangeValidationResult { get; private set; }
         public OrbitWatchMarkerValidationResult WatchMarkerValidationResult { get; private set; }
         public OrbitValidationResult ValidationResult { get; private set; }
@@ -28,6 +31,7 @@ namespace Gley.CameraSystem
         public ClosedBezierOrbit(VehicleOrbit orbit)
         {
             vehicleOrbit = orbit;
+            Bearing = new OrbitBearing();
             Rebuild();
         }
 
@@ -106,7 +110,10 @@ namespace Gley.CameraSystem
             samples.Clear();
             watchMarkers.Clear();
             watchPointKeys.Clear();
+            bearingPositions.Clear();
+            bearingDistances.Clear();
             Length = 0f;
+            Bearing.Rebuild(bearingPositions, bearingDistances, Length);
             ValidationResult = ValidateOrbit();
             WatchMarkerValidationResult = ValidateWatchMarkers();
             OffsetRangeValidationResult = ValidateOffsetRanges();
@@ -134,7 +141,16 @@ namespace Gley.CameraSystem
             {
                 ValidationResult = OrbitValidationResult.Degenerate;
                 samples.Clear();
+                return;
             }
+
+            for (int sampleIndex = 0; sampleIndex < samples.Count; sampleIndex++)
+            {
+                bearingPositions.Add(vehicleOrbit.OrientationAdjustment * samples[sampleIndex].Position);
+                bearingDistances.Add(samples[sampleIndex].Distance);
+            }
+
+            Bearing.Rebuild(bearingPositions, bearingDistances, Length);
         }
 
         private OrbitRemovableSectionValidationResult ValidateRemovableSections()
