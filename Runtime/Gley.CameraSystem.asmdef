@@ -1,7 +1,9 @@
 {
     "name": "Gley.CameraSystem",
     "rootNamespace": "Gley.CameraSystem",
-    "references": [],
+    "references": [
+        "Gley.Common"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

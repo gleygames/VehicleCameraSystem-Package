@@ -2,7 +2,9 @@
     "name": "Gley.CameraSystem.Editor",
     "rootNamespace": "Gley.CameraSystem.Editor",
     "references": [
-        "Gley.CameraSystem"
+        "Gley.CameraSystem",
+        "Gley.Common",
+        "Gley.Common.Editor"
     ],
     "includePlatforms": [
         "Editor"
