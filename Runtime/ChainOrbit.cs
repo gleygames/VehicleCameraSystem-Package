@@ -6,6 +6,7 @@ namespace Gley.CameraSystem
     public class ChainOrbit
     {
         private const float MinimumLength = 0.0001f;
+        private const float KnotSnapDistance = 0.001f;
         private const float NormalSamplingDistance = 0.01f;
         private const float PlanarTolerance = 0.0001f;
         private const int SamplesPerSegment = 32;
@@ -616,6 +617,8 @@ namespace Gley.CameraSystem
         {
             List<OrbitSourceSegment> sourceSegments = CreateSourceSegments(bodyIndex);
             float sourceLength = GetSourceLength(sourceSegments);
+            startDistance = SnapToSegmentBoundary(sourceSegments, startDistance);
+            endDistance = SnapToSegmentBoundary(sourceSegments, endDistance);
 
             if (isLeadBody)
             {
@@ -709,6 +712,25 @@ namespace Gley.CameraSystem
             }
 
             return sourceSegments[sourceSegments.Count - 1].EndDistance;
+        }
+
+        private float SnapToSegmentBoundary(List<OrbitSourceSegment> sourceSegments, float distance)
+        {
+            for (int segmentIndex = 0; segmentIndex < sourceSegments.Count; segmentIndex++)
+            {
+                if (Mathf.Abs(distance - sourceSegments[segmentIndex].StartDistance) <= KnotSnapDistance)
+                {
+                    return sourceSegments[segmentIndex].StartDistance;
+                }
+            }
+
+            float sourceLength = GetSourceLength(sourceSegments);
+            if (Mathf.Abs(distance - sourceLength) <= KnotSnapDistance)
+            {
+                return sourceLength;
+            }
+
+            return distance;
         }
 
         private OrbitSourceSegment GetSourceSegment(List<OrbitSourceSegment> sourceSegments, float distance)

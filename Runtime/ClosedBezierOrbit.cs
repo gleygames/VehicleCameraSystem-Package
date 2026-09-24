@@ -11,6 +11,7 @@ namespace Gley.CameraSystem
         private const float RemovableSectionPositionTolerance = 0.0001f;
         private const int SamplesPerSegment = 32;
         private const float WatchMarkerPositionTolerance = 0.001f;
+        private const float KnotSnapDistance = 0.001f;
 
         private readonly List<OrbitArcLengthSample> samples = new List<OrbitArcLengthSample>();
         private readonly List<OrbitWatchMarker> watchMarkers = new List<OrbitWatchMarker>();
@@ -94,7 +95,7 @@ namespace Gley.CameraSystem
             }
 
             OrbitRemovableSection section = vehicleOrbit.GetRemovableSection(attachmentEnd);
-            return EvaluateBodyLocalPosition(Length * section.NormalizedStartPosition);
+            return EvaluateBodyLocalPosition(SnapToKnot(Length * section.NormalizedStartPosition));
         }
 
         public Vector3 EvaluateBodyLocalRemovableSectionEnd(OrbitAttachmentEnd attachmentEnd)
@@ -105,7 +106,7 @@ namespace Gley.CameraSystem
             }
 
             OrbitRemovableSection section = vehicleOrbit.GetRemovableSection(attachmentEnd);
-            return EvaluateBodyLocalPosition(Length * section.NormalizedEndPosition);
+            return EvaluateBodyLocalPosition(SnapToKnot(Length * section.NormalizedEndPosition));
         }
 
         public void Rebuild()
@@ -160,6 +161,20 @@ namespace Gley.CameraSystem
             {
                 OffsetRangeValidationResult = OrbitOffsetRangeValidationResult.InwardZoomExceedsCurvature;
             }
+        }
+
+        private float SnapToKnot(float distance)
+        {
+            for (int sampleIndex = 0; sampleIndex < samples.Count; sampleIndex += SamplesPerSegment)
+            {
+                float knotDistance = samples[sampleIndex].Distance;
+                if (Mathf.Abs(distance - knotDistance) <= KnotSnapDistance)
+                {
+                    return knotDistance;
+                }
+            }
+
+            return distance;
         }
 
         private OrbitRemovableSectionValidationResult ValidateRemovableSections()
