@@ -325,11 +325,17 @@ namespace Gley.CameraSystem
 
                     if (sampleDistance <= 0f)
                     {
-                        return false;
+                        continue;
+                    }
+
+                    float previousSegmentT = 0f;
+                    if (previousSample.SegmentIndex == currentSample.SegmentIndex)
+                    {
+                        previousSegmentT = previousSample.SegmentT;
                     }
 
                     segmentIndex = currentSample.SegmentIndex;
-                    segmentT = Mathf.Lerp(previousSample.SegmentT, currentSample.SegmentT, (wrappedDistance - previousSample.Distance) / sampleDistance);
+                    segmentT = Mathf.Lerp(previousSegmentT, currentSample.SegmentT, (wrappedDistance - previousSample.Distance) / sampleDistance);
                     return true;
                 }
             }

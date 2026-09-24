@@ -262,6 +262,11 @@ namespace Gley.CameraSystem
                 }
             }
 
+            if (AreWatchMarkersDuplicateAcrossOrbitWrap())
+            {
+                return OrbitWatchMarkerValidationResult.DuplicateMarkerPosition;
+            }
+
             return OrbitWatchMarkerValidationResult.Valid;
         }
 
@@ -280,6 +285,18 @@ namespace Gley.CameraSystem
 
                 watchMarkers[previousMarkerIndex + 1] = marker;
             }
+        }
+
+        private bool AreWatchMarkersDuplicateAcrossOrbitWrap()
+        {
+            if (watchMarkers.Count < 2)
+            {
+                return false;
+            }
+
+            float firstPosition = watchMarkers[0].NormalizedOrbitPosition;
+            float lastPosition = watchMarkers[watchMarkers.Count - 1].NormalizedOrbitPosition;
+            return firstPosition + 1f - lastPosition <= WatchMarkerPositionTolerance;
         }
 
         private OrbitValidationResult ValidateOrbit()
@@ -516,8 +533,19 @@ namespace Gley.CameraSystem
                 if (wrappedDistance <= currentSample.Distance)
                 {
                     float sampleDistance = currentSample.Distance - previousSample.Distance;
+                    if (sampleDistance <= 0f)
+                    {
+                        continue;
+                    }
+
+                    float previousSegmentT = 0f;
+                    if (previousSample.SegmentIndex == currentSample.SegmentIndex)
+                    {
+                        previousSegmentT = previousSample.SegmentT;
+                    }
+
                     float sampleT = (wrappedDistance - previousSample.Distance) / sampleDistance;
-                    float segmentT = Mathf.Lerp(previousSample.SegmentT, currentSample.SegmentT, sampleT);
+                    float segmentT = Mathf.Lerp(previousSegmentT, currentSample.SegmentT, sampleT);
                     return EvaluateSegmentPosition(currentSample.SegmentIndex, segmentT);
                 }
             }

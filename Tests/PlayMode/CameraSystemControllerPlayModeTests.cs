@@ -63,7 +63,7 @@ namespace Gley.CameraSystem.Tests.PlayMode
 
             vehicleBodyObject.transform.position = new Vector3(8f, 0f, -2f);
             secondVehicleBodyObject.transform.position = new Vector3(-7f, 0f, 9f);
-            yield return new WaitForEndOfFrame();
+            yield return null;
 
             Vector3 expectedFirstCameraPosition = vehicleBodyObject.transform.TransformPoint(vehicleProfile.FixedCameraLocalPosition);
             Vector3 expectedSecondCameraPosition = secondVehicleBodyObject.transform.TransformPoint(secondVehicleProfile.FixedCameraLocalPosition);
