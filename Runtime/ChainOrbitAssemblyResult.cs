@@ -1,6 +1,6 @@
 namespace Gley.CameraSystem
 {
-    internal enum LinearOrbitComposerAssemblyResult
+    public enum ChainOrbitAssemblyResult
     {
         NotAssembled,
         Valid,

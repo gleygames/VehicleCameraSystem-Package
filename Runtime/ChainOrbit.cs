@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace Gley.CameraSystem
 {
-    internal class LinearOrbitComposer
+    public class ChainOrbit
     {
         private const float MinimumLength = 0.0001f;
         private const float NormalSamplingDistance = 0.01f;
@@ -15,26 +15,54 @@ namespace Gley.CameraSystem
         private readonly List<AssembledOrbitSegmentSource> segmentSources = new List<AssembledOrbitSegmentSource>();
         private readonly List<AssembledBezierOrbitSegment> segments = new List<AssembledBezierOrbitSegment>();
         private readonly List<ClosedBezierOrbit> sourceOrbits = new List<ClosedBezierOrbit>();
+        private readonly List<VehicleOrbit> bodyOrbits = new List<VehicleOrbit>();
+        private readonly List<MergedMarker> mergedMarkers = new List<MergedMarker>();
+        private readonly List<WatchPointKey> watchPointKeys = new List<WatchPointKey>();
+        private readonly List<Vector3> bearingPositions = new List<Vector3>();
+        private readonly List<float> bearingDistances = new List<float>();
+        private readonly List<VehicleProfile> bodyProfiles = new List<VehicleProfile>();
+        private readonly IReadOnlyList<ChainBody> bodies;
         private readonly IReadOnlyList<GeneratedOrbitConnectorPair> connectorPairs;
         private readonly IReadOnlyList<Vector3> bodyOffsets;
-        private readonly IReadOnlyList<VehicleProfile> bodyProfiles;
+        private readonly WatchPointCurve watchPointCurve = new WatchPointCurve();
+        private readonly OrbitBearing bearing = new OrbitBearing();
+        private readonly int rootIndex;
 
         private float leadOrbitLength;
         private float retainedLeadStartDistance;
 
         public IReadOnlyList<AssembledBezierOrbitSegment> Segments => segments;
+        public IReadOnlyList<MergedMarker> MergedMarkers => mergedMarkers;
+        public OrbitBearing Bearing => bearing;
 
-        public LinearOrbitComposerAssemblyResult AssemblyResult { get; private set; }
+        public ChainOrbitAssemblyResult AssemblyResult { get; private set; }
         public float Length { get; private set; }
-        public bool HasValidWatchMarkers => AreWatchMarkersValid();
-        public bool IsClosed => AssemblyResult == LinearOrbitComposerAssemblyResult.Valid;
+        public bool HasValidWatchMarkers => AreWatchMarkersValid() && mergedMarkers.Count > 0;
+        public bool IsClosed => AssemblyResult == ChainOrbitAssemblyResult.Valid;
 
-        public LinearOrbitComposer(IReadOnlyList<VehicleProfile> profiles, IReadOnlyList<Vector3> offsets, IReadOnlyList<GeneratedOrbitConnectorPair> generatedConnectorPairs)
+        public ChainOrbit(IReadOnlyList<ChainBody> chainBodies, int rootIndex, IReadOnlyList<GeneratedOrbitConnectorPair> generatedConnectorPairs)
         {
-            bodyProfiles = profiles;
-            bodyOffsets = offsets;
+            bodies = chainBodies;
+            this.rootIndex = rootIndex;
             connectorPairs = generatedConnectorPairs;
+            List<Vector3> offsets = new List<Vector3>();
+            if (chainBodies != null)
+            {
+                for (int index = 0; index < chainBodies.Count; index++)
+                {
+                    bodyProfiles.Add(chainBodies[index].Profile);
+                    bodyOrbits.Add(chainBodies[index].Orbit);
+                    offsets.Add(chainBodies[index].StraightOffset);
+                }
+            }
+
+            bodyOffsets = offsets;
             Rebuild();
+        }
+
+        public ChainOrbit(ChainLayout layout, IReadOnlyList<Transform> bodyTransforms, int rootIndex)
+            : this(layout.CreateBodies(bodyTransforms), rootIndex, layout.ConnectorPairs)
+        {
         }
 
         public Vector3 EvaluateLeadBodyLocalPosition(float distance)
@@ -50,9 +78,14 @@ namespace Gley.CameraSystem
             return segments[segmentIndex].EvaluatePosition(segmentT);
         }
 
-        public Vector3 EvaluateWorldPosition(Transform leadBody, float distance)
+        public Vector3 EvaluateRootLocalPosition(float distance)
         {
-            return leadBody.TransformPoint(EvaluateLeadBodyLocalPosition(distance));
+            return EvaluateLeadBodyLocalPosition(distance);
+        }
+
+        public Vector3 EvaluateWorldPosition(Transform rootBody, float distance)
+        {
+            return rootBody.TransformPoint(EvaluateRootLocalPosition(distance));
         }
 
         public Vector3 EvaluateLeadBodyLocalInwardNormal(float distance)
@@ -69,7 +102,7 @@ namespace Gley.CameraSystem
                 return Vector3.zero;
             }
 
-            Vector3 planeNormal = bodyProfiles[0].PrimaryOrbit.OrientationAdjustment * Vector3.up;
+            Vector3 planeNormal = bodyOrbits[rootIndex].OrientationAdjustment * Vector3.up;
             Vector3 inwardNormal = Vector3.Cross(tangent.normalized, planeNormal);
 
             if (CalculateSignedArea() < 0f)
@@ -80,24 +113,54 @@ namespace Gley.CameraSystem
             return inwardNormal;
         }
 
-        public Vector3 EvaluateLeadBodyLocalWatchPoint(float distance)
+        public Vector3 EvaluateRootLocalInwardNormal(float distance)
         {
-            int segmentIndex;
-            float segmentT;
+            return EvaluateLeadBodyLocalInwardNormal(distance);
+        }
 
-            if (!IsClosed || !HasValidWatchMarkers || !TryGetOrbitSegmentPosition(distance, out segmentIndex, out segmentT))
+        public Vector3 EvaluateRootLocalWatchPoint(float distance)
+        {
+            if (!IsClosed || !HasValidWatchMarkers)
             {
                 return Vector3.zero;
             }
 
-            AssembledOrbitSegmentSource segmentSource = segmentSources[segmentIndex];
+            return watchPointCurve.Evaluate(Mathf.Repeat(distance, Length) / Length);
+        }
 
-            if (segmentSource != null)
+        public Vector3 EvaluateWorldWatchPointOwnerFrame(float distance, IReadOnlyList<Transform> bodyTransforms)
+        {
+            if (!IsClosed || !HasValidWatchMarkers)
             {
-                return EvaluateSourceWatchPoint(segmentSource, segmentT);
+                return Vector3.zero;
             }
 
-            return EvaluateConnectorWatchPoint(segmentIndex, segmentT);
+            return watchPointCurve.EvaluateWorld(Mathf.Repeat(distance, Length) / Length, bodyTransforms, mergedMarkers);
+        }
+
+        public Vector3 EvaluateLeadBodyLocalWatchPoint(float distance)
+        {
+            return EvaluateRootLocalWatchPoint(distance);
+        }
+
+        public bool TryGetRetainedFrontOrbitDistance(float frontOrbitDistance, out float combinedOrbitDistance)
+        {
+            return TryGetRetainedLeadOrbitDistance(frontOrbitDistance, out combinedOrbitDistance);
+        }
+
+        public bool TryGetRetainedFrontSourceOrbitDistance(float combinedOrbitDistance, out float frontOrbitDistance)
+        {
+            return TryGetRetainedLeadSourceOrbitDistance(combinedOrbitDistance, out frontOrbitDistance);
+        }
+
+        public OrbitWatchMarkerValidationResult GetWatchMarkerValidationResult(int bodyIndex)
+        {
+            if (bodyIndex < 0 || bodyIndex >= sourceOrbits.Count || sourceOrbits[bodyIndex] == null)
+            {
+                return OrbitWatchMarkerValidationResult.MissingMarkers;
+            }
+
+            return sourceOrbits[bodyIndex].WatchMarkerValidationResult;
         }
 
         public bool TryGetRetainedLeadOrbitDistance(float leadOrbitDistance, out float combinedOrbitDistance)
@@ -172,14 +235,16 @@ namespace Gley.CameraSystem
             retainedLeadSegmentMappings.Clear();
             segmentSources.Clear();
             segments.Clear();
+            mergedMarkers.Clear();
+            watchPointKeys.Clear();
             Length = 0f;
             leadOrbitLength = 0f;
             retainedLeadStartDistance = 0f;
-            AssemblyResult = LinearOrbitComposerAssemblyResult.NotAssembled;
+            AssemblyResult = ChainOrbitAssemblyResult.NotAssembled;
 
             if (!HasValidInputs())
             {
-                AssemblyResult = LinearOrbitComposerAssemblyResult.ConnectorGenerationFailed;
+                AssemblyResult = ChainOrbitAssemblyResult.ConnectorGenerationFailed;
                 return;
             }
 
@@ -212,13 +277,13 @@ namespace Gley.CameraSystem
 
             if (!AreSegmentEndpointsConnected())
             {
-                AssemblyResult = LinearOrbitComposerAssemblyResult.Disconnected;
+                AssemblyResult = ChainOrbitAssemblyResult.Disconnected;
                 return;
             }
 
             if (!AreSegmentsPlanar())
             {
-                AssemblyResult = LinearOrbitComposerAssemblyResult.NonPlanar;
+                AssemblyResult = ChainOrbitAssemblyResult.NonPlanar;
                 return;
             }
 
@@ -226,17 +291,111 @@ namespace Gley.CameraSystem
 
             if (Length < MinimumLength)
             {
-                AssemblyResult = LinearOrbitComposerAssemblyResult.Degenerate;
+                AssemblyResult = ChainOrbitAssemblyResult.Degenerate;
                 return;
             }
 
             if (HasSelfIntersection())
             {
-                AssemblyResult = LinearOrbitComposerAssemblyResult.SelfIntersecting;
+                AssemblyResult = ChainOrbitAssemblyResult.SelfIntersecting;
                 return;
             }
 
-            AssemblyResult = LinearOrbitComposerAssemblyResult.Valid;
+            AssemblyResult = ChainOrbitAssemblyResult.Valid;
+            BuildMergedMarkers();
+            BuildBearing();
+        }
+
+        private void BuildMergedMarkers()
+        {
+            for (int bodyIndex = 0; bodyIndex < bodies.Count; bodyIndex++)
+            {
+                VehicleOrbit orbit = bodyOrbits[bodyIndex];
+                ClosedBezierOrbit sourceOrbit = sourceOrbits[bodyIndex];
+                if (sourceOrbit.WatchMarkerValidationResult != OrbitWatchMarkerValidationResult.Valid)
+                {
+                    continue;
+                }
+
+                for (int markerIndex = 0; markerIndex < orbit.WatchMarkers.Count; markerIndex++)
+                {
+                    OrbitWatchMarker marker = orbit.WatchMarkers[markerIndex];
+                    float markerDistance = sourceOrbit.Length * marker.NormalizedOrbitPosition;
+                    float assembledDistance;
+                    if (!TryGetRetainedSourceDistance(bodyIndex, markerDistance, out assembledDistance))
+                    {
+                        continue;
+                    }
+
+                    float progress = assembledDistance / Length;
+                    Vector3 ownerPoint = marker.WatchPointLocalPosition;
+                    MergedMarker merged = new MergedMarker(bodies[bodyIndex].Body, ownerPoint, ownerPoint + bodyOffsets[bodyIndex], marker.Name, assembledDistance, progress, bodies[bodyIndex].ChainIndex, marker.Id, marker.IsPointOfInterest);
+                    int insertionIndex = mergedMarkers.Count;
+                    mergedMarkers.Add(merged);
+                    while (insertionIndex > 0 && mergedMarkers[insertionIndex - 1].NormalizedProgress > progress)
+                    {
+                        mergedMarkers[insertionIndex] = mergedMarkers[insertionIndex - 1];
+                        insertionIndex--;
+                    }
+
+                    mergedMarkers[insertionIndex] = merged;
+                }
+            }
+
+            for (int markerIndex = 0; markerIndex < mergedMarkers.Count; markerIndex++)
+            {
+                MergedMarker marker = mergedMarkers[markerIndex];
+                watchPointKeys.Add(new WatchPointKey(marker.NormalizedProgress, marker.RootLocalWatchPoint, marker.ChainIndex));
+            }
+
+            watchPointCurve.Rebuild(watchPointKeys);
+        }
+
+        private bool TryGetRetainedSourceDistance(int bodyIndex, float sourceDistance, out float assembledDistance)
+        {
+            assembledDistance = 0f;
+            float sourceLength = sourceOrbits[bodyIndex].Length;
+            for (int segmentIndex = 0; segmentIndex < segmentSources.Count; segmentIndex++)
+            {
+                AssembledOrbitSegmentSource source = segmentSources[segmentIndex];
+                if (source == null || source.BodyIndex != bodyIndex)
+                {
+                    continue;
+                }
+
+                float startDistance = source.SourceSegmentStartDistance + GetSourceSegmentDistance(source.SourceSegment, source.SourceStartT);
+                float endDistance = source.SourceSegmentStartDistance + GetSourceSegmentDistance(source.SourceSegment, source.SourceEndT);
+                float candidateDistance = sourceDistance;
+                if (candidateDistance < startDistance - MinimumLength)
+                {
+                    candidateDistance += sourceLength;
+                }
+
+                if (candidateDistance < startDistance - MinimumLength || candidateDistance > endDistance + MinimumLength)
+                {
+                    continue;
+                }
+
+                float sourceT = GetSegmentParameter(source.SourceSegment, candidateDistance - source.SourceSegmentStartDistance);
+                float assembledT = (sourceT - source.SourceStartT) / (source.SourceEndT - source.SourceStartT);
+                assembledDistance = GetAssembledSegmentDistance(segmentIndex, Mathf.Clamp01(assembledT));
+                return true;
+            }
+
+            return false;
+        }
+
+        private void BuildBearing()
+        {
+            bearingPositions.Clear();
+            bearingDistances.Clear();
+            for (int sampleIndex = 0; sampleIndex < samples.Count; sampleIndex++)
+            {
+                bearingPositions.Add(samples[sampleIndex].Position);
+                bearingDistances.Add(samples[sampleIndex].Distance);
+            }
+
+            bearing.Rebuild(bearingPositions, bearingDistances, Length);
         }
 
         private void CreateSourceOrbits()
@@ -252,27 +411,33 @@ namespace Gley.CameraSystem
             {
                 VehicleProfile profile = bodyProfiles[profileIndex];
 
-                if (profile == null || profile.PrimaryOrbit == null)
+                if (profile == null || bodyOrbits[profileIndex] == null)
                 {
                     sourceOrbits.Add(null);
                 }
                 else
                 {
-                    sourceOrbits.Add(new ClosedBezierOrbit(profile.PrimaryOrbit));
+                    sourceOrbits.Add(new ClosedBezierOrbit(bodyOrbits[profileIndex]));
                 }
             }
         }
 
         private bool HasValidInputs()
         {
-            if (bodyProfiles == null || bodyOffsets == null || connectorPairs == null || bodyProfiles.Count < 2 || bodyOffsets.Count != bodyProfiles.Count || connectorPairs.Count != bodyProfiles.Count - 1 || sourceOrbits.Count != bodyProfiles.Count)
+            if (bodies == null || bodyOffsets == null || connectorPairs == null || bodyProfiles.Count < 2 || rootIndex < 0 || rootIndex >= bodyProfiles.Count || bodyOffsets.Count != bodyProfiles.Count || connectorPairs.Count != bodyProfiles.Count - 1 || sourceOrbits.Count != bodyProfiles.Count)
             {
                 return false;
             }
 
             for (int bodyIndex = 0; bodyIndex < bodyProfiles.Count; bodyIndex++)
             {
-                if (bodyProfiles[bodyIndex] == null || bodyProfiles[bodyIndex].PrimaryOrbit == null || sourceOrbits[bodyIndex] == null)
+                if (bodyProfiles[bodyIndex] == null || bodyOrbits[bodyIndex] == null || sourceOrbits[bodyIndex] == null || bodies[bodyIndex].ChainIndex != bodyIndex)
+                {
+                    return false;
+                }
+
+                if (sourceOrbits[bodyIndex].ValidationResult != OrbitValidationResult.Valid
+                    || sourceOrbits[bodyIndex].RemovableSectionValidationResult != OrbitRemovableSectionValidationResult.Valid)
                 {
                     return false;
                 }
@@ -343,80 +508,6 @@ namespace Gley.CameraSystem
             return false;
         }
 
-        private Vector3 EvaluateSourceWatchPoint(AssembledOrbitSegmentSource segmentSource, float segmentT)
-        {
-            float sourceSegmentT = Mathf.Lerp(segmentSource.SourceStartT, segmentSource.SourceEndT, segmentT);
-            float sourceOrbitDistance = segmentSource.SourceSegmentStartDistance + GetSourceSegmentDistance(segmentSource.SourceSegment, sourceSegmentT);
-            return segmentSource.SourceOrbit.EvaluateBodyLocalWatchPoint(sourceOrbitDistance) + segmentSource.PositionOffset;
-        }
-
-        private Vector3 EvaluateConnectorWatchPoint(int segmentIndex, float segmentT)
-        {
-            AssembledOrbitSegmentSource previousSegmentSource = GetPreviousSegmentSource(segmentIndex);
-            AssembledOrbitSegmentSource nextSegmentSource = GetNextSegmentSource(segmentIndex);
-
-            if (previousSegmentSource == null || nextSegmentSource == null)
-            {
-                return Vector3.zero;
-            }
-
-            return Vector3.Lerp(EvaluateSourceWatchPoint(previousSegmentSource, 1f), EvaluateSourceWatchPoint(nextSegmentSource, 0f), segmentT);
-        }
-
-        private AssembledOrbitSegmentSource GetPreviousSegmentSource(int segmentIndex)
-        {
-            int sourceIndex = segmentIndex - 1;
-
-            if (sourceIndex < 0)
-            {
-                sourceIndex = segmentSources.Count - 1;
-            }
-
-            while (sourceIndex != segmentIndex)
-            {
-                if (segmentSources[sourceIndex] != null)
-                {
-                    return segmentSources[sourceIndex];
-                }
-
-                sourceIndex--;
-
-                if (sourceIndex < 0)
-                {
-                    sourceIndex = segmentSources.Count - 1;
-                }
-            }
-
-            return null;
-        }
-
-        private AssembledOrbitSegmentSource GetNextSegmentSource(int segmentIndex)
-        {
-            int sourceIndex = segmentIndex + 1;
-
-            if (sourceIndex == segmentSources.Count)
-            {
-                sourceIndex = 0;
-            }
-
-            while (sourceIndex != segmentIndex)
-            {
-                if (segmentSources[sourceIndex] != null)
-                {
-                    return segmentSources[sourceIndex];
-                }
-
-                sourceIndex++;
-
-                if (sourceIndex == segmentSources.Count)
-                {
-                    sourceIndex = 0;
-                }
-            }
-
-            return null;
-        }
-
         private void AddLeadRetainedSegments()
         {
             AddRetainedSectionComplement(0, OrbitAttachmentEnd.Rear, true);
@@ -425,23 +516,23 @@ namespace Gley.CameraSystem
         private void AddMiddleRightSide(int bodyIndex)
         {
             float sourceLength = sourceOrbits[bodyIndex].Length;
-            OrbitRemovableSection frontSection = bodyProfiles[bodyIndex].PrimaryOrbit.FrontRemovableSection;
-            OrbitRemovableSection rearSection = bodyProfiles[bodyIndex].PrimaryOrbit.RearRemovableSection;
+            OrbitRemovableSection frontSection = bodyOrbits[bodyIndex].FrontRemovableSection;
+            OrbitRemovableSection rearSection = bodyOrbits[bodyIndex].RearRemovableSection;
             AddRetainedInterval(bodyIndex, sourceLength * frontSection.NormalizedEndPosition, sourceLength * rearSection.NormalizedStartPosition, false);
         }
 
         private void AddMiddleLeftSide(int bodyIndex)
         {
             float sourceLength = sourceOrbits[bodyIndex].Length;
-            OrbitRemovableSection frontSection = bodyProfiles[bodyIndex].PrimaryOrbit.FrontRemovableSection;
-            OrbitRemovableSection rearSection = bodyProfiles[bodyIndex].PrimaryOrbit.RearRemovableSection;
+            OrbitRemovableSection frontSection = bodyOrbits[bodyIndex].FrontRemovableSection;
+            OrbitRemovableSection rearSection = bodyOrbits[bodyIndex].RearRemovableSection;
             AddRetainedInterval(bodyIndex, sourceLength * rearSection.NormalizedEndPosition, sourceLength * frontSection.NormalizedStartPosition, false);
         }
 
         private void AddRetainedSectionComplement(int bodyIndex, OrbitAttachmentEnd attachmentEnd, bool isLeadBody)
         {
             float sourceLength = sourceOrbits[bodyIndex].Length;
-            OrbitRemovableSection removableSection = bodyProfiles[bodyIndex].PrimaryOrbit.GetRemovableSection(attachmentEnd);
+            OrbitRemovableSection removableSection = bodyOrbits[bodyIndex].GetRemovableSection(attachmentEnd);
             AddRetainedInterval(bodyIndex, sourceLength * removableSection.NormalizedEndPosition, sourceLength * removableSection.NormalizedStartPosition, isLeadBody);
         }
 
@@ -482,7 +573,7 @@ namespace Gley.CameraSystem
                 float endT = GetSegmentParameter(sourceSegment, nextDistance - sourceStartDistance);
                 int assembledSegmentIndex = segments.Count;
                 segments.Add(CreateSubsegment(sourceSegment.Segment, startT, endT));
-                segmentSources.Add(new AssembledOrbitSegmentSource(sourceOrbits[bodyIndex], sourceSegment, sourceStartDistance, startT, endT, bodyOffsets[bodyIndex]));
+                segmentSources.Add(new AssembledOrbitSegmentSource(sourceOrbits[bodyIndex], sourceSegment, sourceStartDistance, startT, endT, bodyOffsets[bodyIndex], bodyIndex));
 
                 if (isLeadBody)
                 {
@@ -508,7 +599,7 @@ namespace Gley.CameraSystem
 
         private List<OrbitSourceSegment> CreateSourceSegments(int bodyIndex)
         {
-            VehicleOrbit vehicleOrbit = bodyProfiles[bodyIndex].PrimaryOrbit;
+            VehicleOrbit vehicleOrbit = bodyOrbits[bodyIndex];
             Vector3 positionOffset = bodyOffsets[bodyIndex];
             List<OrbitSourceSegment> sourceSegments = new List<OrbitSourceSegment>();
             float startDistance = 0f;
@@ -676,7 +767,7 @@ namespace Gley.CameraSystem
 
         private bool AreSegmentsPlanar()
         {
-            Vector3 planeNormal = bodyProfiles[0].PrimaryOrbit.OrientationAdjustment * Vector3.up;
+            Vector3 planeNormal = bodyOrbits[rootIndex].OrientationAdjustment * Vector3.up;
             Vector3 planePosition = segments[0].StartPosition;
 
             for (int segmentIndex = 0; segmentIndex < segments.Count; segmentIndex++)
@@ -854,44 +945,6 @@ namespace Gley.CameraSystem
             float minimumY = Mathf.Min(segmentStart.y, segmentEnd.y);
             float maximumY = Mathf.Max(segmentStart.y, segmentEnd.y);
             return point.x >= minimumX && point.x <= maximumX && point.y >= minimumY && point.y <= maximumY;
-        }
-
-        private readonly struct RetainedLeadSegmentMapping
-        {
-            public OrbitSourceSegment SourceSegment { get; }
-            public float SourceSegmentStartDistance { get; }
-            public float SourceStartDistance { get; }
-            public float SourceEndDistance { get; }
-            public float SourceStartT { get; }
-            public float SourceEndT { get; }
-            public int AssembledSegmentIndex { get; }
-
-            public RetainedLeadSegmentMapping(OrbitSourceSegment sourceSegment, float sourceSegmentStartDistance, float sourceStartDistance, float sourceEndDistance, float sourceStartT, float sourceEndT, int assembledSegmentIndex)
-            {
-                SourceSegment = sourceSegment;
-                SourceSegmentStartDistance = sourceSegmentStartDistance;
-                SourceStartDistance = sourceStartDistance;
-                SourceEndDistance = sourceEndDistance;
-                SourceStartT = sourceStartT;
-                SourceEndT = sourceEndT;
-                AssembledSegmentIndex = assembledSegmentIndex;
-            }
-        }
-
-        private readonly struct OrbitArcLengthSample
-        {
-            public Vector3 Position { get; }
-            public float Distance { get; }
-            public int SegmentIndex { get; }
-            public float SegmentT { get; }
-
-            public OrbitArcLengthSample(Vector3 position, float distance, int segmentIndex, float segmentT)
-            {
-                Position = position;
-                Distance = distance;
-                SegmentIndex = segmentIndex;
-                SegmentT = segmentT;
-            }
         }
     }
 }

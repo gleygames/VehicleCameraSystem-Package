@@ -39,6 +39,16 @@ namespace Gley.CameraSystem
 
         public Vector3 Evaluate(float normalizedProgress)
         {
+            return EvaluateInternal(normalizedProgress, null, null);
+        }
+
+        public Vector3 EvaluateWorld(float normalizedProgress, IReadOnlyList<Transform> bodyTransforms, IReadOnlyList<MergedMarker> markers)
+        {
+            return EvaluateInternal(normalizedProgress, bodyTransforms, markers);
+        }
+
+        private Vector3 EvaluateInternal(float normalizedProgress, IReadOnlyList<Transform> bodyTransforms, IReadOnlyList<MergedMarker> markers)
+        {
             if (keys.Count == 0)
             {
                 return Vector3.zero;
@@ -46,7 +56,7 @@ namespace Gley.CameraSystem
 
             if (keys.Count == 1)
             {
-                return keys[0].Point;
+                return GetPoint(0, bodyTransforms, markers);
             }
 
             float progress = Mathf.Repeat(normalizedProgress, 1f);
@@ -68,7 +78,7 @@ namespace Gley.CameraSystem
 
             if (progress == first.NormalizedProgress)
             {
-                return first.Point;
+                return GetPoint(firstIndex, bodyTransforms, markers);
             }
 
             float firstProgress = first.NormalizedProgress;
@@ -87,10 +97,10 @@ namespace Gley.CameraSystem
             float segmentProgress = (progress - firstProgress) / (secondProgress - firstProgress);
             int previousIndex = (firstIndex - 1 + keys.Count) % keys.Count;
             int nextIndex = (secondIndex + 1) % keys.Count;
-            Vector3 previousPoint = keys[previousIndex].Point;
-            Vector3 firstPoint = first.Point;
-            Vector3 secondPoint = second.Point;
-            Vector3 nextPoint = keys[nextIndex].Point;
+            Vector3 previousPoint = GetPoint(previousIndex, bodyTransforms, markers);
+            Vector3 firstPoint = GetPoint(firstIndex, bodyTransforms, markers);
+            Vector3 secondPoint = GetPoint(secondIndex, bodyTransforms, markers);
+            Vector3 nextPoint = GetPoint(nextIndex, bodyTransforms, markers);
             float previousChord = Mathf.Sqrt(Vector3.Distance(previousPoint, firstPoint));
             float currentChord = Mathf.Sqrt(Vector3.Distance(firstPoint, secondPoint));
             float nextChord = Mathf.Sqrt(Vector3.Distance(secondPoint, nextPoint));
@@ -133,6 +143,23 @@ namespace Gley.CameraSystem
             Vector3 b1 = Vector3.LerpUnclamped(a1, a2, (t - t0) / (t2 - t0));
             Vector3 b2 = Vector3.LerpUnclamped(a2, a3, (t - t1) / (t3 - t1));
             return Vector3.LerpUnclamped(b1, b2, (t - t1) / (t2 - t1));
+        }
+
+        private Vector3 GetPoint(int index, IReadOnlyList<Transform> bodyTransforms, IReadOnlyList<MergedMarker> markers)
+        {
+            if (bodyTransforms == null || markers == null || index >= markers.Count)
+            {
+                return keys[index].Point;
+            }
+
+            MergedMarker marker = markers[index];
+            int ownerIndex = keys[index].OwnerIndex;
+            if (ownerIndex < 0 || ownerIndex >= bodyTransforms.Count || bodyTransforms[ownerIndex] == null)
+            {
+                return keys[index].Point;
+            }
+
+            return bodyTransforms[ownerIndex].TransformPoint(marker.OwnerLocalWatchPoint);
         }
     }
 }

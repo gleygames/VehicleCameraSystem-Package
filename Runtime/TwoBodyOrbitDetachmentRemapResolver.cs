@@ -4,16 +4,16 @@ namespace Gley.CameraSystem
 {
     public class TwoBodyOrbitDetachmentRemapResolver
     {
-        private readonly TwoBodyClosedBezierOrbit combinedOrbit;
+        private readonly ChainOrbit combinedOrbit;
         private readonly ClosedBezierOrbit rootOrbit;
         private readonly VehicleOrbit rootVehicleOrbit;
 
-        public TwoBodyClosedBezierOrbit CombinedOrbit => combinedOrbit;
+        public ChainOrbit CombinedOrbit => combinedOrbit;
         public ClosedBezierOrbit RootOrbit => rootOrbit;
         public OrbitDetachmentRemapResult LastRemapResult { get; private set; }
         public float RemappedOrbitDistance { get; private set; }
 
-        public TwoBodyOrbitDetachmentRemapResolver(VehicleProfile rootVehicleProfile, TwoBodyClosedBezierOrbit attachedOrbit)
+        public TwoBodyOrbitDetachmentRemapResolver(VehicleProfile rootVehicleProfile, ChainOrbit attachedOrbit)
         {
             combinedOrbit = attachedOrbit;
 

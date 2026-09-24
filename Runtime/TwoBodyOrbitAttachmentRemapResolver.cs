@@ -6,22 +6,32 @@ namespace Gley.CameraSystem
     {
         private readonly ClosedBezierOrbit frontOrbit;
         private readonly ClosedBezierOrbit rearOrbit;
-        private readonly TwoBodyClosedBezierOrbit combinedOrbit;
+        private readonly ChainOrbit combinedOrbit;
         private readonly VehicleOrbit frontVehicleOrbit;
         private readonly VehicleOrbit rearVehicleOrbit;
         private readonly VehicleProfile frontVehicleProfile;
         private readonly VehicleProfile rearVehicleProfile;
+        private readonly ChainLayout layout;
 
-        public TwoBodyClosedBezierOrbit CombinedOrbit => combinedOrbit;
+        public ChainOrbit CombinedOrbit => combinedOrbit;
 
         public OrbitAttachmentRemapResult LastRemapResult { get; private set; }
         public float RemappedOrbitDistance { get; private set; }
 
-        public TwoBodyOrbitAttachmentRemapResolver(VehicleProfile frontVehicleProfile, VehicleProfile rearVehicleProfile)
+        public TwoBodyOrbitAttachmentRemapResolver(VehicleProfile frontVehicleProfile, VehicleProfile rearVehicleProfile, Transform frontBody = null, Transform rearBody = null)
         {
             this.frontVehicleProfile = frontVehicleProfile;
             this.rearVehicleProfile = rearVehicleProfile;
-            combinedOrbit = new TwoBodyClosedBezierOrbit(frontVehicleProfile, rearVehicleProfile);
+            VehicleProfile[] profiles = { frontVehicleProfile, rearVehicleProfile };
+            Transform[] bodies = { frontBody, rearBody };
+            VehicleOrbit rootOrbit = null;
+            if (frontVehicleProfile != null)
+            {
+                rootOrbit = frontVehicleProfile.PrimaryOrbit;
+            }
+
+            layout = new ChainLayout(profiles, 0, rootOrbit);
+            combinedOrbit = new ChainOrbit(layout, bodies, 0);
 
             if (frontVehicleProfile == null || rearVehicleProfile == null)
             {
@@ -81,8 +91,8 @@ namespace Gley.CameraSystem
             float rearTargetNormalizedPosition = rearRearSection.NormalizedStartPosition + rearSectionLength * 0.5f;
             rearTargetNormalizedPosition = Mathf.Repeat(rearTargetNormalizedPosition, 1f);
             float frontRetainedLength = frontOrbit.Length * (1f - GetNormalizedSectionLength(removedFrontRearSection));
-            TwoBodyOrbitConnectorGenerator connectorGenerator = new TwoBodyOrbitConnectorGenerator(frontVehicleProfile, rearVehicleProfile);
-            float rightConnectorLength = Vector3.Distance(connectorGenerator.ConnectorPair.RightConnector.StartPosition, connectorGenerator.ConnectorPair.RightConnector.EndPosition);
+            GeneratedOrbitConnector connector = layout.ConnectorPairs[0].RightConnector;
+            float rightConnectorLength = Vector3.Distance(connector.StartPosition, connector.EndPosition);
             float rearTargetDistance = rearOrbit.Length * rearTargetNormalizedPosition;
             float rearRetainedStartDistance = rearOrbit.Length * rearFrontSection.NormalizedEndPosition;
             float rearDistanceFromRetainedStart = rearTargetDistance - rearRetainedStartDistance;

@@ -10,8 +10,9 @@ namespace Gley.CameraSystem
         public float SourceSegmentStartDistance { get; }
         public float SourceStartT { get; }
         public float SourceEndT { get; }
+        public int BodyIndex { get; }
 
-        public AssembledOrbitSegmentSource(ClosedBezierOrbit sourceOrbit, OrbitSourceSegment sourceSegment, float sourceSegmentStartDistance, float sourceStartT, float sourceEndT, Vector3 positionOffset)
+        public AssembledOrbitSegmentSource(ClosedBezierOrbit sourceOrbit, OrbitSourceSegment sourceSegment, float sourceSegmentStartDistance, float sourceStartT, float sourceEndT, Vector3 positionOffset, int bodyIndex)
         {
             SourceOrbit = sourceOrbit;
             SourceSegment = sourceSegment;
@@ -19,6 +20,7 @@ namespace Gley.CameraSystem
             SourceSegmentStartDistance = sourceSegmentStartDistance;
             SourceStartT = sourceStartT;
             SourceEndT = sourceEndT;
+            BodyIndex = bodyIndex;
         }
     }
 }
