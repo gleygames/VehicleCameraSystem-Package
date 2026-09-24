@@ -17,6 +17,7 @@ namespace Gley.CameraSystem
         private readonly OrbitRemapper orbitRemapper = new OrbitRemapper();
         private readonly StoredPoseResolver storedPoseResolver = new StoredPoseResolver();
         private readonly MotionEstimator rootMotionEstimator = new MotionEstimator();
+        private readonly StraightLineTransition activationTransition = new StraightLineTransition();
 
         [SerializeField] private Camera assignedCamera;
         [SerializeField] private VehicleCameraTarget target;
@@ -42,6 +43,7 @@ namespace Gley.CameraSystem
         private int builtChainVersion;
         private bool isActive;
         private bool isTargetLost;
+        private bool isTransitioning;
 
         public event Action<int, CommandEndResult> CommandEnded;
         public event Action<int> ViewChanged;
@@ -123,7 +125,7 @@ namespace Gley.CameraSystem
 
             rootMotionEstimator.UpdateMotionEstimate(GetScaledDeltaTime(deltaTime));
             UpdateCommandsAndInput(deltaTime);
-            WriteCameraPose();
+            WriteCameraPose(deltaTime);
         }
 
         public void Configure(Camera camera, VehicleCameraTarget vehicleTarget, string viewName)
@@ -193,6 +195,8 @@ namespace Gley.CameraSystem
             VehicleViewEntry view;
             VehicleOrbit orbit;
             ChainOrbit builtOrbit;
+            Vector3 startPosition = assignedCamera.transform.position;
+            Quaternion startRotation = assignedCamera.transform.rotation;
             CameraCommandResult result = ValidateView(target, initialViewName, out view, out orbit, out builtOrbit);
             if (result != CameraCommandResult.Accepted)
             {
@@ -209,10 +213,30 @@ namespace Gley.CameraSystem
             WarnAboutRigidbodyInterpolation();
             if (options.Mode != TransitionMode.Snap)
             {
+                Vector3 destinationPosition;
+                Quaternion destinationRotation;
+                CalculateCameraPose(out destinationPosition, out destinationRotation);
+                float easeTime = activeView.Preset.Travel.EaseTime;
+                if (options.Mode == TransitionMode.Duration)
+                {
+                    activationTransition.BeginWithDuration(startPosition, startRotation, destinationPosition, options.Value, easeTime);
+                }
+                else
+                {
+                    float speed = options.Value;
+                    if (options.Mode == TransitionMode.PresetSpeed)
+                    {
+                        speed = activeView.Preset.Travel.StraightLineTransitionSpeed;
+                    }
+
+                    activationTransition.Begin(startPosition, startRotation, destinationPosition, speed, easeTime);
+                }
+
                 commandId = BeginCommand();
+                isTransitioning = true;
             }
 
-            WriteCameraPose();
+            WriteCameraPose(0f);
             return CameraCommandResult.Accepted;
         }
 
@@ -258,7 +282,7 @@ namespace Gley.CameraSystem
 
             EndRunningCommand(CommandEndResult.Replaced);
             ApplyView(view, orbit, builtOrbit);
-            WriteCameraPose();
+            WriteCameraPose(0f);
             ViewChanged?.Invoke(view.Id);
             return CameraCommandResult.Accepted;
         }
@@ -295,7 +319,7 @@ namespace Gley.CameraSystem
             ApplyView(view, orbit, builtOrbit);
             rootMotionEstimator.Configure(target, Vector3.zero);
             WarnAboutRigidbodyInterpolation();
-            WriteCameraPose();
+            WriteCameraPose(0f);
             return CameraCommandResult.Accepted;
         }
 
@@ -429,6 +453,7 @@ namespace Gley.CameraSystem
 
         private void EndRunningCommand(CommandEndResult result)
         {
+            isTransitioning = false;
             if (runningCommandId == 0)
             {
                 return;
@@ -523,6 +548,7 @@ namespace Gley.CameraSystem
             heightIntent = 0f;
             horizontalOrbitIntent = 0f;
             zoomIntent = 0f;
+            isTransitioning = false;
         }
 
         private void ReleaseOwnership()
@@ -560,8 +586,7 @@ namespace Gley.CameraSystem
 
         private void UpdateCommandsAndInput(float deltaTime)
         {
-            EndRunningCommand(CommandEndResult.Completed);
-            if (chainOrbit == null)
+            if (isTransitioning || chainOrbit == null)
             {
                 return;
             }
@@ -603,18 +628,40 @@ namespace Gley.CameraSystem
             zoomOffset = Mathf.Clamp(zoomOffset, activeOrbit.MinimumZoomOffset, activeOrbit.MaximumZoomOffset);
         }
 
-        private void WriteCameraPose()
+        private void WriteCameraPose(float deltaTime)
         {
             if (activeOrbit != null && chainOrbit == null)
             {
                 return;
             }
 
+            Vector3 cameraPosition;
+            Quaternion cameraRotation;
+            CalculateCameraPose(out cameraPosition, out cameraRotation);
+            if (isTransitioning)
+            {
+                activationTransition.AdvanceTransition(deltaTime, cameraPosition, cameraRotation, out cameraPosition, out cameraRotation);
+                assignedCamera.transform.SetPositionAndRotation(cameraPosition, cameraRotation);
+                if (activationTransition.IsComplete)
+                {
+                    isTransitioning = false;
+                    EndRunningCommand(CommandEndResult.Completed);
+                }
+
+                return;
+            }
+
+            assignedCamera.transform.SetPositionAndRotation(cameraPosition, cameraRotation);
+        }
+
+        private void CalculateCameraPose(out Vector3 cameraPosition, out Quaternion cameraRotation)
+        {
             Vector3 targetPosition = ComputeTargetPose();
             Vector3 laggedPosition = ApplyFollowLag(targetPosition);
             Vector3 correctedPosition = ApplyCollision(laggedPosition);
             Quaternion aim = ComputeAim(correctedPosition);
-            assignedCamera.transform.SetPositionAndRotation(correctedPosition, aim);
+            cameraPosition = correctedPosition;
+            cameraRotation = aim;
         }
 
         private Vector3 ComputeTargetPose()
