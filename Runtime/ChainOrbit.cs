@@ -153,6 +153,71 @@ namespace Gley.CameraSystem
             return TryGetRetainedLeadSourceOrbitDistance(combinedOrbitDistance, out frontOrbitDistance);
         }
 
+        public bool TryGetSourcePosition(float distance, out Transform body, out VehicleOrbit orbit, out float sourceDistance)
+        {
+            body = null;
+            orbit = null;
+            sourceDistance = 0f;
+
+            int segmentIndex;
+            float segmentT;
+            if (!IsClosed || !TryGetOrbitSegmentPosition(distance, out segmentIndex, out segmentT))
+            {
+                return false;
+            }
+
+            AssembledOrbitSegmentSource source = segmentSources[segmentIndex];
+            if (source == null)
+            {
+                return false;
+            }
+
+            body = bodies[source.BodyIndex].Body;
+            orbit = bodyOrbits[source.BodyIndex];
+            float sourceT = Mathf.Lerp(source.SourceStartT, source.SourceEndT, segmentT);
+            sourceDistance = Mathf.Repeat(source.SourceSegmentStartDistance + GetSourceSegmentDistance(source.SourceSegment, sourceT), source.SourceOrbit.Length);
+            return true;
+        }
+
+        public bool TryGetRetainedSourceDistance(Transform body, VehicleOrbit orbit, float sourceDistance, out float assembledDistance)
+        {
+            assembledDistance = 0f;
+            if (!IsClosed || body == null || orbit == null)
+            {
+                return false;
+            }
+
+            for (int bodyIndex = 0; bodyIndex < bodies.Count; bodyIndex++)
+            {
+                if (ReferenceEquals(bodies[bodyIndex].Body, body) && ReferenceEquals(bodyOrbits[bodyIndex], orbit))
+                {
+                    return TryGetRetainedSourceDistance(bodyIndex, sourceDistance, out assembledDistance);
+                }
+            }
+
+            return false;
+        }
+
+        public bool TryGetRearFallbackDistance(out float distance)
+        {
+            distance = 0f;
+            if (!IsClosed || bodies.Count == 0)
+            {
+                return false;
+            }
+
+            int terminalIndex = bodies.Count - 1;
+            OrbitRemovableSection rear = bodyOrbits[terminalIndex].RearRemovableSection;
+            if (rear == null)
+            {
+                return false;
+            }
+
+            float sectionLength = Mathf.Repeat(rear.NormalizedEndPosition - rear.NormalizedStartPosition, 1f);
+            float midpoint = Mathf.Repeat(rear.NormalizedStartPosition + sectionLength * 0.5f, 1f);
+            return TryGetRetainedSourceDistance(terminalIndex, sourceOrbits[terminalIndex].Length * midpoint, out distance);
+        }
+
         public OrbitWatchMarkerValidationResult GetWatchMarkerValidationResult(int bodyIndex)
         {
             if (bodyIndex < 0 || bodyIndex >= sourceOrbits.Count || sourceOrbits[bodyIndex] == null)
@@ -248,7 +313,14 @@ namespace Gley.CameraSystem
                 return;
             }
 
-            AddLeadRetainedSegments();
+            if (bodyProfiles.Count == 1)
+            {
+                AddRetainedInterval(0, 0f, sourceOrbits[0].Length, true);
+            }
+            else
+            {
+                AddLeadRetainedSegments();
+            }
 
             for (int connectorIndex = 0; connectorIndex < connectorPairs.Count; connectorIndex++)
             {
@@ -424,7 +496,7 @@ namespace Gley.CameraSystem
 
         private bool HasValidInputs()
         {
-            if (bodies == null || bodyOffsets == null || connectorPairs == null || bodyProfiles.Count < 2 || rootIndex < 0 || rootIndex >= bodyProfiles.Count || bodyOffsets.Count != bodyProfiles.Count || connectorPairs.Count != bodyProfiles.Count - 1 || sourceOrbits.Count != bodyProfiles.Count)
+            if (bodies == null || bodyOffsets == null || connectorPairs == null || bodyProfiles.Count < 1 || rootIndex < 0 || rootIndex >= bodyProfiles.Count || bodyOffsets.Count != bodyProfiles.Count || connectorPairs.Count != bodyProfiles.Count - 1 || sourceOrbits.Count != bodyProfiles.Count)
             {
                 return false;
             }
