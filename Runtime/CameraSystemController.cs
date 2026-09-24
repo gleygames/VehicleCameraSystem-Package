@@ -18,6 +18,7 @@ namespace Gley.CameraSystem
         private readonly StraightLineTransition activationTransition = new StraightLineTransition();
         private readonly CameraRenderingState renderingState = new CameraRenderingState();
         private readonly OrbitMovement orbitMovement = new OrbitMovement();
+        private readonly PointOfInterestTravel pointOfInterestTravel = new PointOfInterestTravel();
         private readonly DistanceComposer distanceComposer = new DistanceComposer();
         private readonly OrbitAim orbitAim = new OrbitAim();
 
@@ -309,6 +310,81 @@ namespace Gley.CameraSystem
             return CameraCommandResult.Accepted;
         }
 
+        public CameraCommandResult RequestPoint(string pointName)
+        {
+            int commandId;
+            return RequestPoint(pointName, new TravelRequest(TravelDirection.Shortest), out commandId);
+        }
+
+        public CameraCommandResult RequestPoint(string pointName, TravelRequest request, out int commandId)
+        {
+            commandId = 0;
+            CameraCommandResult result = GetPointTravelAvailability();
+            if (result == CameraCommandResult.Accepted)
+            {
+                result = pointOfInterestTravel.PlanPoint(pointName, request.Direction);
+            }
+
+            if (result != CameraCommandResult.Accepted)
+            {
+                ReportRejection($"{name}: RequestPoint '{pointName}' rejected: {result}.");
+                return result;
+            }
+
+            commandId = BeginPointTravel(request);
+            return CameraCommandResult.Accepted;
+        }
+
+        public CameraCommandResult RequestNextPoint()
+        {
+            int commandId;
+            return RequestNextPoint(true, new TravelRequest(TravelDirection.Shortest), out commandId);
+        }
+
+        public CameraCommandResult RequestNextPoint(bool wrap, TravelRequest request, out int commandId)
+        {
+            commandId = 0;
+            CameraCommandResult result = GetPointTravelAvailability();
+            if (result == CameraCommandResult.Accepted)
+            {
+                result = pointOfInterestTravel.PlanNext(wrap, request.Direction);
+            }
+
+            if (result != CameraCommandResult.Accepted)
+            {
+                ReportRejection($"{name}: RequestNextPoint rejected: {result}.");
+                return result;
+            }
+
+            commandId = BeginPointTravel(request);
+            return CameraCommandResult.Accepted;
+        }
+
+        public CameraCommandResult RequestPreviousPoint()
+        {
+            int commandId;
+            return RequestPreviousPoint(true, new TravelRequest(TravelDirection.Shortest), out commandId);
+        }
+
+        public CameraCommandResult RequestPreviousPoint(bool wrap, TravelRequest request, out int commandId)
+        {
+            commandId = 0;
+            CameraCommandResult result = GetPointTravelAvailability();
+            if (result == CameraCommandResult.Accepted)
+            {
+                result = pointOfInterestTravel.PlanPrevious(wrap, request.Direction);
+            }
+
+            if (result != CameraCommandResult.Accepted)
+            {
+                ReportRejection($"{name}: RequestPreviousPoint rejected: {result}.");
+                return result;
+            }
+
+            commandId = BeginPointTravel(request);
+            return CameraCommandResult.Accepted;
+        }
+
         public void SetHeldIntent(float horizontal, float vertical, float zoom)
         {
             orbitMovement.SetHeldIntent(horizontal, vertical, zoom);
@@ -361,9 +437,37 @@ namespace Gley.CameraSystem
             return CameraCommandResult.Accepted;
         }
 
+        private CameraCommandResult GetPointTravelAvailability()
+        {
+            if (!isActive)
+            {
+                return CameraCommandResult.NotActive;
+            }
+
+            if (isTargetLost || !IsTargetAlive())
+            {
+                return CameraCommandResult.MissingTarget;
+            }
+
+            if (chainOrbit == null)
+            {
+                return CameraCommandResult.PointNotFound;
+            }
+
+            return CameraCommandResult.Accepted;
+        }
+
+        private int BeginPointTravel(TravelRequest request)
+        {
+            int commandId = BeginCommand();
+            orbitMovement.StopManualTravel();
+            pointOfInterestTravel.BeginPlannedTravel(request.Speed, activeView.Preset.Travel);
+            return commandId;
+        }
+
         private bool CanApplyManualOrbitInput()
         {
-            return isActive && !isTargetLost && !isTransitioning && chainOrbit != null;
+            return isActive && !isTargetLost && !isTransitioning && !pointOfInterestTravel.IsTravelling && chainOrbit != null;
         }
 
         private float GetFrameDeltaTime()
@@ -486,6 +590,7 @@ namespace Gley.CameraSystem
             {
                 chainOrbit = null;
                 orbitFrame = null;
+                pointOfInterestTravel.SetOrbit(null, rootBody);
                 ReportRejection($"{name}: the orbit '{activeOrbit.Name}' is invalid after the vehicle chain changed; the camera holds its pose.");
                 return;
             }
@@ -498,6 +603,7 @@ namespace Gley.CameraSystem
             }
 
             chainOrbit = rebuiltOrbit;
+            pointOfInterestTravel.SetOrbit(chainOrbit, rootBody);
             orbitFrame = new OrbitFrame(rootBody, activeOrbit.OrientationAdjustment);
             orbitMovement.Configure(chainOrbit, activeOrbit, activeView.Preset.OrbitMovement, new LivePose(orbitDistance, orbitMovement.PlayerZoom, orbitMovement.HeightOffset));
         }
@@ -524,6 +630,7 @@ namespace Gley.CameraSystem
         private void EndRunningCommand(CommandEndResult result)
         {
             isTransitioning = false;
+            pointOfInterestTravel.Stop();
             if (runningCommandId == 0)
             {
                 return;
@@ -617,6 +724,7 @@ namespace Gley.CameraSystem
             chainBodies.Clear();
             orbitMovement.Clear();
             orbitMovement.ClearHeldIntent();
+            pointOfInterestTravel.Clear();
             isTransitioning = false;
         }
 
@@ -647,6 +755,16 @@ namespace Gley.CameraSystem
         {
             if (isTransitioning || chainOrbit == null)
             {
+                return;
+            }
+
+            if (pointOfInterestTravel.IsTravelling)
+            {
+                if (pointOfInterestTravel.UpdatePointOfInterestTravel(deltaTime))
+                {
+                    EndRunningCommand(CommandEndResult.Completed);
+                }
+
                 return;
             }
 
@@ -860,6 +978,7 @@ namespace Gley.CameraSystem
             aimFrame = view.Preset.AimFrame;
             orbitFrame = null;
             orbitMovement.Clear();
+            pointOfInterestTravel.Configure(chainOrbit, rootBody, orbitMovement);
             if (chainOrbit == null)
             {
                 return;

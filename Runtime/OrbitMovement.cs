@@ -32,6 +32,8 @@ namespace Gley.CameraSystem
         public float PlayerZoom => playerZoom;
         public float HeightOffset => heightOffset;
         public float TravelSpeed => travelSpeed;
+        public float IncreasingBearingSign => windingSign;
+        public float LimitArcLength => limitArcLength;
         public bool HasAngleLimits => hasAngleLimits;
 
         public void Configure(ChainOrbit chainOrbit, VehicleOrbit rangeSource, OrbitMovementSettings movementSettings, LivePose pose)
@@ -101,6 +103,27 @@ namespace Gley.CameraSystem
             }
 
             playerZoom = ClampZoom(playerZoom + normalizedSpan * settings.Pinch);
+        }
+
+        public void SetOrbitDistance(float distance)
+        {
+            orbitDistance = distance;
+        }
+
+        public void StopManualTravel()
+        {
+            travelSpeed = 0f;
+        }
+
+        public float GetLimitRelativeDistance(float distance)
+        {
+            float relative = Mathf.Repeat(distance - limitStartDistance, orbit.Length);
+            if (relative > limitArcLength + (orbit.Length - limitArcLength) * 0.5f)
+            {
+                relative -= orbit.Length;
+            }
+
+            return relative;
         }
 
         public void ClearHeldIntent()
@@ -201,19 +224,8 @@ namespace Gley.CameraSystem
                 return;
             }
 
-            float relative = GetLimitRelativeDistance();
+            float relative = GetLimitRelativeDistance(orbitDistance);
             orbitDistance += Mathf.Clamp(relative, 0f, limitArcLength) - relative;
-        }
-
-        private float GetLimitRelativeDistance()
-        {
-            float relative = Mathf.Repeat(orbitDistance - limitStartDistance, orbit.Length);
-            if (relative > limitArcLength + (orbit.Length - limitArcLength) * 0.5f)
-            {
-                relative -= orbit.Length;
-            }
-
-            return relative;
         }
 
         private void UpdateTravelSpeed(float deltaTime)
@@ -242,7 +254,7 @@ namespace Gley.CameraSystem
                 return false;
             }
 
-            float relative = GetLimitRelativeDistance();
+            float relative = GetLimitRelativeDistance(orbitDistance);
             float unclamped = relative + step;
             float clamped = Mathf.Clamp(unclamped, 0f, limitArcLength);
             orbitDistance += clamped - relative;

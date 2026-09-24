@@ -12,9 +12,10 @@ namespace Gley.CameraSystem
         public float NormalizedProgress { get; }
         public int ChainIndex { get; }
         public int MarkerId { get; }
+        public int AuthoredIndex { get; }
         public bool IsPointOfInterest { get; }
 
-        public MergedMarker(Transform ownerBody, Vector3 ownerLocalWatchPoint, Vector3 rootLocalWatchPoint, string name, float orbitDistance, float normalizedProgress, int chainIndex, int markerId, bool isPointOfInterest)
+        public MergedMarker(Transform ownerBody, Vector3 ownerLocalWatchPoint, Vector3 rootLocalWatchPoint, string name, float orbitDistance, float normalizedProgress, int chainIndex, int markerId, int authoredIndex, bool isPointOfInterest)
         {
             OwnerBody = ownerBody;
             OwnerLocalWatchPoint = ownerLocalWatchPoint;
@@ -24,6 +25,7 @@ namespace Gley.CameraSystem
             NormalizedProgress = normalizedProgress;
             ChainIndex = chainIndex;
             MarkerId = markerId;
+            AuthoredIndex = authoredIndex;
             IsPointOfInterest = isPointOfInterest;
         }
     }

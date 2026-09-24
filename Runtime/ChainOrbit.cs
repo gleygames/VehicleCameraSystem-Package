@@ -401,7 +401,7 @@ namespace Gley.CameraSystem
 
                     float progress = assembledDistance / Length;
                     Vector3 ownerPoint = marker.WatchPointLocalPosition;
-                    MergedMarker merged = new MergedMarker(bodies[bodyIndex].Body, ownerPoint, ownerPoint + bodyOffsets[bodyIndex], marker.Name, assembledDistance, progress, bodies[bodyIndex].ChainIndex, marker.Id, marker.IsPointOfInterest);
+                    MergedMarker merged = new MergedMarker(bodies[bodyIndex].Body, ownerPoint, ownerPoint + bodyOffsets[bodyIndex], marker.Name, assembledDistance, progress, bodies[bodyIndex].ChainIndex, marker.Id, markerIndex, marker.IsPointOfInterest);
                     int insertionIndex = mergedMarkers.Count;
                     mergedMarkers.Add(merged);
                     while (insertionIndex > 0 && mergedMarkers[insertionIndex - 1].NormalizedProgress > progress)
