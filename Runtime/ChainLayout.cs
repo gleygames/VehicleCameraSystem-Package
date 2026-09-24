@@ -12,6 +12,7 @@ namespace Gley.CameraSystem
         private readonly List<VehicleOrbit> orbits = new List<VehicleOrbit>();
         private readonly IReadOnlyList<VehicleProfile> profiles;
         private readonly IReadOnlyList<OrbitConnectorPairOverride> pairOverrides;
+        private readonly IReadOnlyList<OrbitConnectorPairOverride> jointOverrides;
         private readonly VehicleOrbit rootOrbit;
         private readonly int rootIndex;
 
@@ -20,12 +21,13 @@ namespace Gley.CameraSystem
         public IReadOnlyList<VehicleOrbit> Orbits => orbits;
         public ChainLayoutResult LayoutResult { get; private set; }
 
-        public ChainLayout(IReadOnlyList<VehicleProfile> profiles, int rootIndex, VehicleOrbit rootOrbit, IReadOnlyList<OrbitConnectorPairOverride> pairOverrides = null)
+        public ChainLayout(IReadOnlyList<VehicleProfile> profiles, int rootIndex, VehicleOrbit rootOrbit, IReadOnlyList<OrbitConnectorPairOverride> pairOverrides = null, IReadOnlyList<OrbitConnectorPairOverride> jointOverrides = null)
         {
             this.profiles = profiles;
             this.rootIndex = rootIndex;
             this.rootOrbit = rootOrbit;
             this.pairOverrides = pairOverrides;
+            this.jointOverrides = jointOverrides;
             Rebuild();
         }
 
@@ -208,6 +210,24 @@ namespace Gley.CameraSystem
             }
 
             GeneratedOrbitConnectorPair generated = new GeneratedOrbitConnectorPair(CreateStraightConnector(frontLeft, rearLeft), CreateStraightConnector(frontRight, rearRight));
+            if (jointOverrides != null && index < jointOverrides.Count && jointOverrides[index] != null)
+            {
+                OrbitConnectorPairOverride jointOverride = jointOverrides[index];
+                if (!jointOverride.Matches(profiles[index], profiles[index + 1], OrbitAttachmentEnd.Rear, OrbitAttachmentEnd.Front))
+                {
+                    return false;
+                }
+
+                GeneratedOrbitConnectorPair replacement = jointOverride.CreateConnectorPair();
+                if (!EndpointsMatch(generated, replacement))
+                {
+                    return false;
+                }
+
+                pair = replacement;
+                return true;
+            }
+
             if (pairOverrides != null)
             {
                 for (int overrideIndex = 0; overrideIndex < pairOverrides.Count; overrideIndex++)

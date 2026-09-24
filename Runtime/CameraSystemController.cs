@@ -5,14 +5,11 @@ namespace Gley.CameraSystem
     public class CameraSystemController : MonoBehaviour
     {
         private ClosedBezierOrbit closedBezierOrbit;
-        private ChainOrbit chainOrbit;
         private OrbitFrame orbitFrame;
         [SerializeField] private Camera assignedCamera;
         [SerializeField] private CameraViewPreset selectedViewPreset;
         [SerializeField] private Transform vehicleBody;
         [SerializeField] private VehicleProfile vehicleProfile;
-        private Transform rearVehicleBody;
-        private VehicleProfile rearVehicleProfile;
         private float currentOrbitTravelSpeed;
         private float heightIntent;
         private float heightOffset;
@@ -26,17 +23,12 @@ namespace Gley.CameraSystem
         public CameraViewPreset SelectedViewPreset => selectedViewPreset;
         public Transform VehicleBody => vehicleBody;
         public VehicleProfile VehicleProfile => vehicleProfile;
-        public Transform RearVehicleBody => rearVehicleBody;
-        public VehicleProfile RearVehicleProfile => rearVehicleProfile;
         public CameraSystemActivationResult LastActivationResult { get; private set; }
-        public CameraSystemAttachmentResult LastAttachmentResult { get; private set; }
         public float CurrentOrbitTravelSpeed => currentOrbitTravelSpeed;
         public float HeightOffset => heightOffset;
         public float OrbitDistance => orbitDistance;
         public float ZoomOffset => zoomOffset;
         public bool IsActive { get; private set; }
-        public bool HasRearVehicleAttachment => rearVehicleBody != null;
-        public bool UsesAttachedOrbit => chainOrbit != null;
 
         private void LateUpdate()
         {
@@ -75,136 +67,12 @@ namespace Gley.CameraSystem
             selectedViewPreset = null;
             vehicleBody = body;
             vehicleProfile = profile;
-            rearVehicleBody = null;
-            rearVehicleProfile = null;
         }
 
         public void SelectViewPreset(CameraViewPreset viewPreset)
         {
             Release();
             selectedViewPreset = viewPreset;
-        }
-
-        public CameraSystemAttachmentResult AttachRearBody(Transform body, VehicleProfile profile)
-        {
-            if (vehicleBody == null)
-            {
-                LastAttachmentResult = CameraSystemAttachmentResult.MissingRootVehicleBody;
-                return LastAttachmentResult;
-            }
-
-            if (vehicleProfile == null)
-            {
-                LastAttachmentResult = CameraSystemAttachmentResult.MissingRootVehicleProfile;
-                return LastAttachmentResult;
-            }
-
-            if (body == null)
-            {
-                LastAttachmentResult = CameraSystemAttachmentResult.MissingRearVehicleBody;
-                return LastAttachmentResult;
-            }
-
-            if (profile == null)
-            {
-                LastAttachmentResult = CameraSystemAttachmentResult.MissingRearVehicleProfile;
-                return LastAttachmentResult;
-            }
-
-            if (body == vehicleBody)
-            {
-                LastAttachmentResult = CameraSystemAttachmentResult.RearVehicleMatchesRoot;
-                return LastAttachmentResult;
-            }
-
-            if (rearVehicleBody != null)
-            {
-                LastAttachmentResult = CameraSystemAttachmentResult.RearVehicleAlreadyAttached;
-                return LastAttachmentResult;
-            }
-
-            if (IsActive && ActiveViewPreset.ViewType == CameraViewType.Presentation && vehicleProfile.PrimaryOrbit.MergeWhenAttached)
-            {
-                ChainOrbit oldOrbit = CreateRootOrbit();
-                VehicleProfile[] profiles = { vehicleProfile, profile };
-                Transform[] bodies = { vehicleBody, body };
-                ChainLayout layout = new ChainLayout(profiles, 0, vehicleProfile.PrimaryOrbit);
-                ChainOrbit newOrbit = new ChainOrbit(layout, bodies, 0);
-
-                if (!newOrbit.IsClosed)
-                {
-                    LastAttachmentResult = CameraSystemAttachmentResult.InvalidActiveExteriorOrbit;
-                    return LastAttachmentResult;
-                }
-
-                if (!newOrbit.HasValidWatchMarkers)
-                {
-                    LastAttachmentResult = CameraSystemAttachmentResult.InvalidActiveExteriorOrbit;
-                    return LastAttachmentResult;
-                }
-
-                OrbitRemapper remapper = new OrbitRemapper();
-                float newDistance;
-                OrbitRemapResult remapResult = remapper.Remap(oldOrbit, orbitDistance, newOrbit, out newDistance);
-
-                if (remapResult == OrbitRemapResult.InvalidNewOrbit)
-                {
-                    LastAttachmentResult = CameraSystemAttachmentResult.InvalidActiveExteriorOrbit;
-                    return LastAttachmentResult;
-                }
-
-                rearVehicleBody = body;
-                rearVehicleProfile = profile;
-                closedBezierOrbit = null;
-                chainOrbit = newOrbit;
-                orbitDistance = newDistance;
-                ApplyOrbitPose();
-                LastAttachmentResult = CameraSystemAttachmentResult.Attached;
-                return LastAttachmentResult;
-            }
-
-            rearVehicleBody = body;
-            rearVehicleProfile = profile;
-            LastAttachmentResult = CameraSystemAttachmentResult.Attached;
-            return LastAttachmentResult;
-        }
-
-        public CameraSystemAttachmentResult DetachRearBody()
-        {
-            if (rearVehicleBody == null)
-            {
-                LastAttachmentResult = CameraSystemAttachmentResult.NoRearVehicleAttached;
-                return LastAttachmentResult;
-            }
-
-            if (IsActive && ActiveViewPreset.ViewType == CameraViewType.Presentation && chainOrbit != null)
-            {
-                ChainOrbit newOrbit = CreateRootOrbit();
-                ClosedBezierOrbit newClosedOrbit = new ClosedBezierOrbit(vehicleProfile.PrimaryOrbit);
-                OrbitRemapper remapper = new OrbitRemapper();
-                float newDistance;
-                OrbitRemapResult remapResult = remapper.Remap(chainOrbit, orbitDistance, newOrbit, out newDistance);
-
-                if (remapResult == OrbitRemapResult.InvalidNewOrbit || newClosedOrbit.ValidationResult != OrbitValidationResult.Valid || newClosedOrbit.WatchMarkerValidationResult != OrbitWatchMarkerValidationResult.Valid)
-                {
-                    LastAttachmentResult = CameraSystemAttachmentResult.InvalidActiveExteriorDetachment;
-                    return LastAttachmentResult;
-                }
-
-                closedBezierOrbit = newClosedOrbit;
-                chainOrbit = null;
-                orbitDistance = newDistance;
-                rearVehicleBody = null;
-                rearVehicleProfile = null;
-                ApplyOrbitPose();
-                LastAttachmentResult = CameraSystemAttachmentResult.Detached;
-                return LastAttachmentResult;
-            }
-
-            rearVehicleBody = null;
-            rearVehicleProfile = null;
-            LastAttachmentResult = CameraSystemAttachmentResult.Detached;
-            return LastAttachmentResult;
         }
 
         public void SetHorizontalOrbitIntent(float intent)
@@ -260,14 +128,7 @@ namespace Gley.CameraSystem
 
             if (ActiveViewPreset.ViewType == CameraViewType.Presentation)
             {
-                if (ShouldUseAttachedOrbit())
-                {
-                    chainOrbit = CreateAttachedOrbit();
-                }
-                else
-                {
-                    closedBezierOrbit = new ClosedBezierOrbit(vehicleProfile.PrimaryOrbit);
-                }
+                closedBezierOrbit = new ClosedBezierOrbit(vehicleProfile.PrimaryOrbit);
 
                 ApplyOrbitPose();
             }
@@ -280,7 +141,6 @@ namespace Gley.CameraSystem
             IsActive = false;
             ActiveViewPreset = null;
             closedBezierOrbit = null;
-            chainOrbit = null;
             orbitFrame = null;
             currentOrbitTravelSpeed = 0f;
             heightIntent = 0f;
@@ -374,26 +234,6 @@ namespace Gley.CameraSystem
                     return CameraSystemActivationResult.InvalidOrbitOffsetRange;
                 }
 
-                if (ShouldUseAttachedOrbit())
-                {
-                    ChainOrbit attachedOrbit = CreateAttachedOrbit();
-
-                    if (attachedOrbit.AssemblyResult != ChainOrbitAssemblyResult.Valid)
-                    {
-                        return CameraSystemActivationResult.InvalidAttachedOrbit;
-                    }
-
-                    if (attachedOrbit.GetWatchMarkerValidationResult(0) == OrbitWatchMarkerValidationResult.MissingMarkers || attachedOrbit.GetWatchMarkerValidationResult(1) == OrbitWatchMarkerValidationResult.MissingMarkers)
-                    {
-                        return CameraSystemActivationResult.MissingAttachedWatchMarkers;
-                    }
-
-                    if (!attachedOrbit.HasValidWatchMarkers)
-                    {
-                        return CameraSystemActivationResult.InvalidAttachedWatchMarkers;
-                    }
-                }
-
                 return CameraSystemActivationResult.Succeeded;
             }
 
@@ -437,18 +277,9 @@ namespace Gley.CameraSystem
             Vector3 inwardNormal;
             Vector3 watchPointLocalPosition;
 
-            if (chainOrbit != null)
-            {
-                cameraPosition = orbitFrame.ToWorldPosition(chainOrbit.EvaluateLeadBodyLocalPosition(orbitDistance));
-                inwardNormal = chainOrbit.EvaluateLeadBodyLocalInwardNormal(orbitDistance);
-                watchPointLocalPosition = chainOrbit.EvaluateLeadBodyLocalWatchPoint(orbitDistance);
-            }
-            else
-            {
-                cameraPosition = orbitFrame.ToWorldPosition(closedBezierOrbit.EvaluateBodyLocalPosition(orbitDistance));
-                inwardNormal = closedBezierOrbit.EvaluateBodyLocalInwardNormal(orbitDistance);
-                watchPointLocalPosition = closedBezierOrbit.EvaluateBodyLocalWatchPoint(orbitDistance);
-            }
+            cameraPosition = orbitFrame.ToWorldPosition(closedBezierOrbit.EvaluateBodyLocalPosition(orbitDistance));
+            inwardNormal = closedBezierOrbit.EvaluateBodyLocalInwardNormal(orbitDistance);
+            watchPointLocalPosition = closedBezierOrbit.EvaluateBodyLocalWatchPoint(orbitDistance);
 
             Vector3 watchPointPosition = vehicleBody.TransformPoint(watchPointLocalPosition);
 
@@ -457,37 +288,6 @@ namespace Gley.CameraSystem
             Vector3 watchDirection = watchPointPosition - cameraPosition;
 
             assignedCamera.transform.SetPositionAndRotation(cameraPosition, Quaternion.LookRotation(watchDirection, vehicleBody.up));
-        }
-
-        private ChainOrbit CreateAttachedOrbit()
-        {
-            VehicleProfile[] profiles = { vehicleProfile, rearVehicleProfile };
-            Transform[] bodies = { vehicleBody, rearVehicleBody };
-            ChainLayout layout = new ChainLayout(profiles, 0, vehicleProfile.PrimaryOrbit);
-            return new ChainOrbit(layout, bodies, 0);
-        }
-
-        private ChainOrbit CreateRootOrbit()
-        {
-            VehicleProfile[] profiles = { vehicleProfile };
-            Transform[] bodies = { vehicleBody };
-            ChainLayout layout = new ChainLayout(profiles, 0, vehicleProfile.PrimaryOrbit);
-            return new ChainOrbit(layout, bodies, 0);
-        }
-
-        private bool ShouldUseAttachedOrbit()
-        {
-            if (rearVehicleBody == null)
-            {
-                return false;
-            }
-
-            if (rearVehicleProfile == null)
-            {
-                return false;
-            }
-
-            return vehicleProfile.PrimaryOrbit.MergeWhenAttached;
         }
 
         private void ApplyFixedPose()
