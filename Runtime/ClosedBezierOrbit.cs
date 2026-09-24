@@ -10,11 +10,13 @@ namespace Gley.CameraSystem
         private const float PlanarTolerance = 0.0001f;
         private const float RemovableSectionPositionTolerance = 0.0001f;
         private const int SamplesPerSegment = 32;
-        private const float WatchMarkerPositionTolerance = 0.0001f;
+        private const float WatchMarkerPositionTolerance = 0.001f;
 
         private readonly List<OrbitArcLengthSample> samples = new List<OrbitArcLengthSample>();
         private readonly List<OrbitWatchMarker> watchMarkers = new List<OrbitWatchMarker>();
+        private readonly List<WatchPointKey> watchPointKeys = new List<WatchPointKey>();
         private readonly VehicleOrbit vehicleOrbit;
+        private readonly WatchPointCurve watchPointCurve = new WatchPointCurve();
 
         public OrbitOffsetRangeValidationResult OffsetRangeValidationResult { get; private set; }
         public OrbitWatchMarkerValidationResult WatchMarkerValidationResult { get; private set; }
@@ -103,11 +105,23 @@ namespace Gley.CameraSystem
         {
             samples.Clear();
             watchMarkers.Clear();
+            watchPointKeys.Clear();
             Length = 0f;
             ValidationResult = ValidateOrbit();
             WatchMarkerValidationResult = ValidateWatchMarkers();
             OffsetRangeValidationResult = ValidateOffsetRanges();
             RemovableSectionValidationResult = ValidateRemovableSections();
+
+            if (WatchMarkerValidationResult == OrbitWatchMarkerValidationResult.Valid)
+            {
+                for (int markerIndex = 0; markerIndex < watchMarkers.Count; markerIndex++)
+                {
+                    OrbitWatchMarker marker = watchMarkers[markerIndex];
+                    watchPointKeys.Add(new WatchPointKey(marker.NormalizedOrbitPosition, marker.WatchPointLocalPosition, 0));
+                }
+            }
+
+            watchPointCurve.Rebuild(watchPointKeys);
 
             if (ValidationResult != OrbitValidationResult.Valid)
             {
@@ -361,43 +375,7 @@ namespace Gley.CameraSystem
 
         private Vector3 EvaluateWatchPoint(float normalizedOrbitPosition)
         {
-            int previousMarkerIndex = watchMarkers.Count - 1;
-
-            for (int markerIndex = 0; markerIndex < watchMarkers.Count; markerIndex++)
-            {
-                if (normalizedOrbitPosition < watchMarkers[markerIndex].NormalizedOrbitPosition)
-                {
-                    break;
-                }
-
-                previousMarkerIndex = markerIndex;
-            }
-
-            int nextMarkerIndex = previousMarkerIndex + 1;
-
-            if (nextMarkerIndex == watchMarkers.Count)
-            {
-                nextMarkerIndex = 0;
-            }
-
-            OrbitWatchMarker previousMarker = watchMarkers[previousMarkerIndex];
-            OrbitWatchMarker nextMarker = watchMarkers[nextMarkerIndex];
-            float previousMarkerPosition = previousMarker.NormalizedOrbitPosition;
-            float nextMarkerPosition = nextMarker.NormalizedOrbitPosition;
-            float interpolationPosition = normalizedOrbitPosition;
-
-            if (nextMarkerIndex == 0)
-            {
-                nextMarkerPosition += 1f;
-            }
-
-            if (interpolationPosition < previousMarkerPosition)
-            {
-                interpolationPosition += 1f;
-            }
-
-            float interpolation = Mathf.InverseLerp(previousMarkerPosition, nextMarkerPosition, interpolationPosition);
-            return Vector3.Lerp(previousMarker.WatchPointLocalPosition, nextMarker.WatchPointLocalPosition, interpolation);
+            return watchPointCurve.Evaluate(normalizedOrbitPosition);
         }
 
         private void BuildArcLengthSamples()
