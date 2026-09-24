@@ -12,10 +12,12 @@ namespace Gley.CameraSystem
         [SerializeField] private OrbitRemovableSection frontRemovableSection;
         [SerializeField] private OrbitRemovableSection rearRemovableSection;
         [SerializeField] private Quaternion orientationAdjustment = Quaternion.identity;
+        [SerializeField] private string name;
         [SerializeField] private float minimumHeightOffset = -2f;
         [SerializeField] private float maximumHeightOffset = 2f;
         [SerializeField] private float minimumZoomOffset = -2f;
         [SerializeField] private float maximumZoomOffset = 2f;
+        [SerializeField] private int id;
         [SerializeField] private bool mergeWhenAttached = true;
 
         public IReadOnlyList<BezierOrbitKnot> Knots => knots;
@@ -24,11 +26,23 @@ namespace Gley.CameraSystem
         public OrbitRemovableSection FrontRemovableSection => frontRemovableSection;
         public OrbitRemovableSection RearRemovableSection => rearRemovableSection;
         public Quaternion OrientationAdjustment => orientationAdjustment;
+        public string Name => name;
         public float MinimumHeightOffset => minimumHeightOffset;
         public float MaximumHeightOffset => maximumHeightOffset;
         public float MinimumZoomOffset => minimumZoomOffset;
         public float MaximumZoomOffset => maximumZoomOffset;
+        public int Id => id;
         public bool MergeWhenAttached => mergeWhenAttached;
+
+        public VehicleOrbit()
+        {
+        }
+
+        public VehicleOrbit(int orbitId, string orbitName)
+        {
+            id = orbitId;
+            name = orbitName;
+        }
 
         public void Configure(List<BezierOrbitKnot> orbitKnots, Quaternion referenceOrientationAdjustment)
         {
@@ -50,6 +64,11 @@ namespace Gley.CameraSystem
             {
                 watchMarkers.Add(markers[index]);
             }
+        }
+
+        public void AddWatchMarker(OrbitWatchMarker marker)
+        {
+            watchMarkers.Add(marker);
         }
 
         public void ConfigureOffsetRanges(float minimumHeight, float maximumHeight, float minimumZoom, float maximumZoom)

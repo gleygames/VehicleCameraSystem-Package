@@ -122,7 +122,7 @@ namespace Gley.CameraSystem
                 return LastAttachmentResult;
             }
 
-            if (IsActive && ActiveViewPreset.ViewType == CameraViewType.ExteriorPresentation && vehicleProfile.VehicleOrbit.MergeWhenAttached)
+            if (IsActive && ActiveViewPreset.ViewType == CameraViewType.ExteriorPresentation && vehicleProfile.PrimaryOrbit.MergeWhenAttached)
             {
                 TwoBodyOrbitAttachmentRemapResolver remapResolver = new TwoBodyOrbitAttachmentRemapResolver(vehicleProfile, profile);
 
@@ -235,8 +235,8 @@ namespace Gley.CameraSystem
 
             if (ActiveViewPreset.ViewType == CameraViewType.ExteriorPresentation)
             {
-                heightOffset = Mathf.Clamp(heightOffset, vehicleProfile.VehicleOrbit.MinimumHeightOffset, vehicleProfile.VehicleOrbit.MaximumHeightOffset);
-                zoomOffset = Mathf.Clamp(zoomOffset, vehicleProfile.VehicleOrbit.MinimumZoomOffset, vehicleProfile.VehicleOrbit.MaximumZoomOffset);
+                heightOffset = Mathf.Clamp(heightOffset, vehicleProfile.PrimaryOrbit.MinimumHeightOffset, vehicleProfile.PrimaryOrbit.MaximumHeightOffset);
+                zoomOffset = Mathf.Clamp(zoomOffset, vehicleProfile.PrimaryOrbit.MinimumZoomOffset, vehicleProfile.PrimaryOrbit.MaximumZoomOffset);
             }
 
             if (ActiveViewPreset.ViewType == CameraViewType.Fixed)
@@ -252,7 +252,7 @@ namespace Gley.CameraSystem
                 }
                 else
                 {
-                    closedBezierOrbit = new ClosedBezierOrbit(vehicleProfile.VehicleOrbit);
+                    closedBezierOrbit = new ClosedBezierOrbit(vehicleProfile.PrimaryOrbit);
                 }
 
                 ApplyOrbitPose();
@@ -285,7 +285,17 @@ namespace Gley.CameraSystem
                 return null;
             }
 
-            return vehicleProfile.FixedViewPreset;
+            for (int viewIndex = 0; viewIndex < vehicleProfile.Views.Count; viewIndex++)
+            {
+                CameraViewPreset viewPreset = vehicleProfile.Views[viewIndex].Preset;
+
+                if (viewPreset != null && viewPreset.ViewType == CameraViewType.Fixed)
+                {
+                    return viewPreset;
+                }
+            }
+
+            return null;
         }
 
         private CameraSystemActivationResult ValidateActivation(CameraViewPreset viewPreset)
@@ -312,7 +322,7 @@ namespace Gley.CameraSystem
 
             if (viewPreset.ViewType == CameraViewType.Fixed)
             {
-                if (vehicleProfile.FixedCameraLocalPosition == vehicleProfile.FixedWatchPointLocalPosition)
+                if (vehicleProfile.FixedViewPose.CameraLocalPosition == vehicleProfile.FixedViewPose.WatchPointLocalPosition)
                 {
                     return CameraSystemActivationResult.InvalidFixedView;
                 }
@@ -322,12 +332,12 @@ namespace Gley.CameraSystem
 
             if (viewPreset.ViewType == CameraViewType.ExteriorPresentation)
             {
-                if (vehicleProfile.VehicleOrbit == null)
+                if (vehicleProfile.PrimaryOrbit == null)
                 {
                     return CameraSystemActivationResult.MissingOrbit;
                 }
 
-                ClosedBezierOrbit orbit = new ClosedBezierOrbit(vehicleProfile.VehicleOrbit);
+                ClosedBezierOrbit orbit = new ClosedBezierOrbit(vehicleProfile.PrimaryOrbit);
 
                 if (orbit.ValidationResult != OrbitValidationResult.Valid)
                 {
@@ -401,9 +411,9 @@ namespace Gley.CameraSystem
         private void UpdateOffsetVisuals(float deltaTime)
         {
             heightOffset += ActiveViewPreset.HeightTravelSpeed * heightIntent * deltaTime;
-            heightOffset = Mathf.Clamp(heightOffset, vehicleProfile.VehicleOrbit.MinimumHeightOffset, vehicleProfile.VehicleOrbit.MaximumHeightOffset);
+            heightOffset = Mathf.Clamp(heightOffset, vehicleProfile.PrimaryOrbit.MinimumHeightOffset, vehicleProfile.PrimaryOrbit.MaximumHeightOffset);
             zoomOffset += ActiveViewPreset.ZoomTravelSpeed * zoomIntent * deltaTime;
-            zoomOffset = Mathf.Clamp(zoomOffset, vehicleProfile.VehicleOrbit.MinimumZoomOffset, vehicleProfile.VehicleOrbit.MaximumZoomOffset);
+            zoomOffset = Mathf.Clamp(zoomOffset, vehicleProfile.PrimaryOrbit.MinimumZoomOffset, vehicleProfile.PrimaryOrbit.MaximumZoomOffset);
         }
 
         private void ApplyOrbitPose()
@@ -446,13 +456,13 @@ namespace Gley.CameraSystem
                 return false;
             }
 
-            return vehicleProfile.VehicleOrbit.MergeWhenAttached;
+            return vehicleProfile.PrimaryOrbit.MergeWhenAttached;
         }
 
         private void ApplyFixedPose()
         {
-            Vector3 cameraPosition = vehicleBody.TransformPoint(vehicleProfile.FixedCameraLocalPosition);
-            Vector3 watchPointPosition = vehicleBody.TransformPoint(vehicleProfile.FixedWatchPointLocalPosition);
+            Vector3 cameraPosition = vehicleBody.TransformPoint(vehicleProfile.FixedViewPose.CameraLocalPosition);
+            Vector3 watchPointPosition = vehicleBody.TransformPoint(vehicleProfile.FixedViewPose.WatchPointLocalPosition);
             Vector3 watchDirection = watchPointPosition - cameraPosition;
 
             assignedCamera.transform.SetPositionAndRotation(cameraPosition, Quaternion.LookRotation(watchDirection, vehicleBody.up));

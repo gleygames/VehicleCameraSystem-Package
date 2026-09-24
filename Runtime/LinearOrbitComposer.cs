@@ -69,7 +69,7 @@ namespace Gley.CameraSystem
                 return Vector3.zero;
             }
 
-            Vector3 planeNormal = bodyProfiles[0].VehicleOrbit.OrientationAdjustment * Vector3.up;
+            Vector3 planeNormal = bodyProfiles[0].PrimaryOrbit.OrientationAdjustment * Vector3.up;
             Vector3 inwardNormal = Vector3.Cross(tangent.normalized, planeNormal);
 
             if (CalculateSignedArea() < 0f)
@@ -252,13 +252,13 @@ namespace Gley.CameraSystem
             {
                 VehicleProfile profile = bodyProfiles[profileIndex];
 
-                if (profile == null || profile.VehicleOrbit == null)
+                if (profile == null || profile.PrimaryOrbit == null)
                 {
                     sourceOrbits.Add(null);
                 }
                 else
                 {
-                    sourceOrbits.Add(new ClosedBezierOrbit(profile.VehicleOrbit));
+                    sourceOrbits.Add(new ClosedBezierOrbit(profile.PrimaryOrbit));
                 }
             }
         }
@@ -272,7 +272,7 @@ namespace Gley.CameraSystem
 
             for (int bodyIndex = 0; bodyIndex < bodyProfiles.Count; bodyIndex++)
             {
-                if (bodyProfiles[bodyIndex] == null || bodyProfiles[bodyIndex].VehicleOrbit == null || sourceOrbits[bodyIndex] == null)
+                if (bodyProfiles[bodyIndex] == null || bodyProfiles[bodyIndex].PrimaryOrbit == null || sourceOrbits[bodyIndex] == null)
                 {
                     return false;
                 }
@@ -425,23 +425,23 @@ namespace Gley.CameraSystem
         private void AddMiddleRightSide(int bodyIndex)
         {
             float sourceLength = sourceOrbits[bodyIndex].Length;
-            OrbitRemovableSection frontSection = bodyProfiles[bodyIndex].VehicleOrbit.FrontRemovableSection;
-            OrbitRemovableSection rearSection = bodyProfiles[bodyIndex].VehicleOrbit.RearRemovableSection;
+            OrbitRemovableSection frontSection = bodyProfiles[bodyIndex].PrimaryOrbit.FrontRemovableSection;
+            OrbitRemovableSection rearSection = bodyProfiles[bodyIndex].PrimaryOrbit.RearRemovableSection;
             AddRetainedInterval(bodyIndex, sourceLength * frontSection.NormalizedEndPosition, sourceLength * rearSection.NormalizedStartPosition, false);
         }
 
         private void AddMiddleLeftSide(int bodyIndex)
         {
             float sourceLength = sourceOrbits[bodyIndex].Length;
-            OrbitRemovableSection frontSection = bodyProfiles[bodyIndex].VehicleOrbit.FrontRemovableSection;
-            OrbitRemovableSection rearSection = bodyProfiles[bodyIndex].VehicleOrbit.RearRemovableSection;
+            OrbitRemovableSection frontSection = bodyProfiles[bodyIndex].PrimaryOrbit.FrontRemovableSection;
+            OrbitRemovableSection rearSection = bodyProfiles[bodyIndex].PrimaryOrbit.RearRemovableSection;
             AddRetainedInterval(bodyIndex, sourceLength * rearSection.NormalizedEndPosition, sourceLength * frontSection.NormalizedStartPosition, false);
         }
 
         private void AddRetainedSectionComplement(int bodyIndex, OrbitAttachmentEnd attachmentEnd, bool isLeadBody)
         {
             float sourceLength = sourceOrbits[bodyIndex].Length;
-            OrbitRemovableSection removableSection = bodyProfiles[bodyIndex].VehicleOrbit.GetRemovableSection(attachmentEnd);
+            OrbitRemovableSection removableSection = bodyProfiles[bodyIndex].PrimaryOrbit.GetRemovableSection(attachmentEnd);
             AddRetainedInterval(bodyIndex, sourceLength * removableSection.NormalizedEndPosition, sourceLength * removableSection.NormalizedStartPosition, isLeadBody);
         }
 
@@ -508,7 +508,7 @@ namespace Gley.CameraSystem
 
         private List<OrbitSourceSegment> CreateSourceSegments(int bodyIndex)
         {
-            VehicleOrbit vehicleOrbit = bodyProfiles[bodyIndex].VehicleOrbit;
+            VehicleOrbit vehicleOrbit = bodyProfiles[bodyIndex].PrimaryOrbit;
             Vector3 positionOffset = bodyOffsets[bodyIndex];
             List<OrbitSourceSegment> sourceSegments = new List<OrbitSourceSegment>();
             float startDistance = 0f;
@@ -676,7 +676,7 @@ namespace Gley.CameraSystem
 
         private bool AreSegmentsPlanar()
         {
-            Vector3 planeNormal = bodyProfiles[0].VehicleOrbit.OrientationAdjustment * Vector3.up;
+            Vector3 planeNormal = bodyProfiles[0].PrimaryOrbit.OrientationAdjustment * Vector3.up;
             Vector3 planePosition = segments[0].StartPosition;
 
             for (int segmentIndex = 0; segmentIndex < segments.Count; segmentIndex++)

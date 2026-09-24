@@ -22,7 +22,7 @@ namespace Gley.CameraSystem
                 return;
             }
 
-            rootVehicleOrbit = rootVehicleProfile.VehicleOrbit;
+            rootVehicleOrbit = rootVehicleProfile.PrimaryOrbit;
 
             if (rootVehicleOrbit == null)
             {

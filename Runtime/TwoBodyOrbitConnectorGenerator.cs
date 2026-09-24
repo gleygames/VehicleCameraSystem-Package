@@ -34,20 +34,20 @@ namespace Gley.CameraSystem
                 return;
             }
 
-            if (frontProfile.VehicleOrbit == null)
+            if (frontProfile.PrimaryOrbit == null)
             {
                 GenerationResult = TwoBodyOrbitConnectorGenerationResult.MissingFrontOrbit;
                 return;
             }
 
-            if (rearProfile.VehicleOrbit == null)
+            if (rearProfile.PrimaryOrbit == null)
             {
                 GenerationResult = TwoBodyOrbitConnectorGenerationResult.MissingRearOrbit;
                 return;
             }
 
-            ClosedBezierOrbit frontOrbit = new ClosedBezierOrbit(frontProfile.VehicleOrbit);
-            ClosedBezierOrbit rearOrbit = new ClosedBezierOrbit(rearProfile.VehicleOrbit);
+            ClosedBezierOrbit frontOrbit = new ClosedBezierOrbit(frontProfile.PrimaryOrbit);
+            ClosedBezierOrbit rearOrbit = new ClosedBezierOrbit(rearProfile.PrimaryOrbit);
 
             if (frontOrbit.ValidationResult != OrbitValidationResult.Valid)
             {

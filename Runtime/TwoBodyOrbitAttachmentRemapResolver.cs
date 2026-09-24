@@ -28,8 +28,8 @@ namespace Gley.CameraSystem
                 return;
             }
 
-            frontVehicleOrbit = frontVehicleProfile.VehicleOrbit;
-            rearVehicleOrbit = rearVehicleProfile.VehicleOrbit;
+            frontVehicleOrbit = frontVehicleProfile.PrimaryOrbit;
+            rearVehicleOrbit = rearVehicleProfile.PrimaryOrbit;
 
             if (frontVehicleOrbit == null || rearVehicleOrbit == null)
             {

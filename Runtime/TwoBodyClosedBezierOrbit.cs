@@ -140,12 +140,12 @@ namespace Gley.CameraSystem
 
         private ClosedBezierOrbit CreateSourceOrbit(VehicleProfile profile)
         {
-            if (profile == null || profile.VehicleOrbit == null)
+            if (profile == null || profile.PrimaryOrbit == null)
             {
                 return null;
             }
 
-            return new ClosedBezierOrbit(profile.VehicleOrbit);
+            return new ClosedBezierOrbit(profile.PrimaryOrbit);
         }
 
     }
