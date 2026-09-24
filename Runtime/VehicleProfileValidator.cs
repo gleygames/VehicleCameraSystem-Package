@@ -142,7 +142,7 @@ namespace Gley.CameraSystem
 
         private bool IsOrbitView(CameraViewType viewType)
         {
-            return viewType == CameraViewType.ExteriorDriving || viewType == CameraViewType.ExteriorPresentation;
+            return viewType == CameraViewType.Driving || viewType == CameraViewType.Presentation;
         }
 
         private void ValidateStableIds(VehicleProfile profile, VehicleProfileValidationReport report)

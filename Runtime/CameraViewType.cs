@@ -4,7 +4,7 @@ namespace Gley.CameraSystem
     {
         Fixed,
         Interior,
-        ExteriorDriving,
-        ExteriorPresentation
+        Driving,
+        Presentation
     }
 }

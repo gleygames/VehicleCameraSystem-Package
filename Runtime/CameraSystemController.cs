@@ -54,7 +54,7 @@ namespace Gley.CameraSystem
                 ApplyFixedPose();
             }
 
-            if (ActiveViewPreset.ViewType == CameraViewType.ExteriorPresentation)
+            if (ActiveViewPreset.ViewType == CameraViewType.Presentation)
             {
                 UpdateOrbitVisuals(deltaTime);
                 UpdateOffsetVisuals(deltaTime);
@@ -122,7 +122,7 @@ namespace Gley.CameraSystem
                 return LastAttachmentResult;
             }
 
-            if (IsActive && ActiveViewPreset.ViewType == CameraViewType.ExteriorPresentation && vehicleProfile.PrimaryOrbit.MergeWhenAttached)
+            if (IsActive && ActiveViewPreset.ViewType == CameraViewType.Presentation && vehicleProfile.PrimaryOrbit.MergeWhenAttached)
             {
                 TwoBodyOrbitAttachmentRemapResolver remapResolver = new TwoBodyOrbitAttachmentRemapResolver(vehicleProfile, profile);
 
@@ -170,7 +170,7 @@ namespace Gley.CameraSystem
                 return LastAttachmentResult;
             }
 
-            if (IsActive && ActiveViewPreset.ViewType == CameraViewType.ExteriorPresentation && twoBodyClosedBezierOrbit != null)
+            if (IsActive && ActiveViewPreset.ViewType == CameraViewType.Presentation && twoBodyClosedBezierOrbit != null)
             {
                 TwoBodyOrbitDetachmentRemapResolver remapResolver = new TwoBodyOrbitDetachmentRemapResolver(vehicleProfile, twoBodyClosedBezierOrbit);
                 OrbitDetachmentRemapResult remapResult = remapResolver.ResolveCombinedOrbitDistance(orbitDistance);
@@ -233,7 +233,7 @@ namespace Gley.CameraSystem
             ActiveViewPreset = viewPreset;
             IsActive = true;
 
-            if (ActiveViewPreset.ViewType == CameraViewType.ExteriorPresentation)
+            if (ActiveViewPreset.ViewType == CameraViewType.Presentation)
             {
                 heightOffset = Mathf.Clamp(heightOffset, vehicleProfile.PrimaryOrbit.MinimumHeightOffset, vehicleProfile.PrimaryOrbit.MaximumHeightOffset);
                 zoomOffset = Mathf.Clamp(zoomOffset, vehicleProfile.PrimaryOrbit.MinimumZoomOffset, vehicleProfile.PrimaryOrbit.MaximumZoomOffset);
@@ -244,7 +244,7 @@ namespace Gley.CameraSystem
                 ApplyFixedPose();
             }
 
-            if (ActiveViewPreset.ViewType == CameraViewType.ExteriorPresentation)
+            if (ActiveViewPreset.ViewType == CameraViewType.Presentation)
             {
                 if (ShouldUseAttachedOrbit())
                 {
@@ -330,7 +330,7 @@ namespace Gley.CameraSystem
                 return CameraSystemActivationResult.Succeeded;
             }
 
-            if (viewPreset.ViewType == CameraViewType.ExteriorPresentation)
+            if (viewPreset.ViewType == CameraViewType.Presentation)
             {
                 if (vehicleProfile.PrimaryOrbit == null)
                 {
@@ -393,15 +393,15 @@ namespace Gley.CameraSystem
                 return;
             }
 
-            float targetOrbitTravelSpeed = ActiveViewPreset.OrbitTravelSpeed * horizontalOrbitIntent;
+            float targetOrbitTravelSpeed = ActiveViewPreset.OrbitMovement.ManualTravelSpeed * horizontalOrbitIntent;
 
-            if (ActiveViewPreset.OrbitStartResponseSeconds <= 0f)
+            if (ActiveViewPreset.OrbitMovement.StartResponseHalfLife <= 0f)
             {
                 currentOrbitTravelSpeed = targetOrbitTravelSpeed;
             }
             else
             {
-                float acceleration = ActiveViewPreset.OrbitTravelSpeed / ActiveViewPreset.OrbitStartResponseSeconds;
+                float acceleration = ActiveViewPreset.OrbitMovement.ManualTravelSpeed / ActiveViewPreset.OrbitMovement.StartResponseHalfLife;
                 currentOrbitTravelSpeed = Mathf.MoveTowards(currentOrbitTravelSpeed, targetOrbitTravelSpeed, acceleration * deltaTime);
             }
 
@@ -410,9 +410,9 @@ namespace Gley.CameraSystem
 
         private void UpdateOffsetVisuals(float deltaTime)
         {
-            heightOffset += ActiveViewPreset.HeightTravelSpeed * heightIntent * deltaTime;
+            heightOffset += ActiveViewPreset.OrbitMovement.HeightRate * heightIntent * deltaTime;
             heightOffset = Mathf.Clamp(heightOffset, vehicleProfile.PrimaryOrbit.MinimumHeightOffset, vehicleProfile.PrimaryOrbit.MaximumHeightOffset);
-            zoomOffset += ActiveViewPreset.ZoomTravelSpeed * zoomIntent * deltaTime;
+            zoomOffset += ActiveViewPreset.OrbitMovement.ZoomRate * zoomIntent * deltaTime;
             zoomOffset = Mathf.Clamp(zoomOffset, vehicleProfile.PrimaryOrbit.MinimumZoomOffset, vehicleProfile.PrimaryOrbit.MaximumZoomOffset);
         }
 
