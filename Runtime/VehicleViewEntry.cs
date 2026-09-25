@@ -32,6 +32,21 @@ namespace Gley.CameraSystem
             orbitId = viewOrbitId;
         }
 
+        public void Rename(string viewName)
+        {
+            name = viewName;
+        }
+
+        public void ConfigurePreset(CameraViewPreset viewPreset)
+        {
+            preset = viewPreset;
+        }
+
+        public void ConfigureOrbit(int viewOrbitId)
+        {
+            orbitId = viewOrbitId;
+        }
+
         public void ConfigureDefaultPose(OrbitPose pose)
         {
             defaultPose = pose;

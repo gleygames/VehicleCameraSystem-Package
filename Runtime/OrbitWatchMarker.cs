@@ -31,6 +31,11 @@ namespace Gley.CameraSystem
             isPointOfInterest = pointOfInterest;
         }
 
+        public void Rename(string markerName)
+        {
+            name = markerName;
+        }
+
         public void Configure(float orbitPosition, Vector3 watchPointPosition)
         {
             normalizedOrbitPosition = orbitPosition;

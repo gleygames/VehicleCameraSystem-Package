@@ -66,6 +66,20 @@ namespace Gley.CameraSystem
             return view;
         }
 
+        public bool RemoveView(int id)
+        {
+            for (int index = 0; index < views.Count; index++)
+            {
+                if (views[index].Id == id)
+                {
+                    views.RemoveAt(index);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public OrbitWatchMarker AddWatchMarker(VehicleOrbit orbit, string name, float normalizedPosition, Vector3 watchPoint, bool isPointOfInterest)
         {
             if (orbit == null)

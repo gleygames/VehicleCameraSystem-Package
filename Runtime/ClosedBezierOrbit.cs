@@ -12,6 +12,7 @@ namespace Gley.CameraSystem
         private const int SamplesPerSegment = 32;
         private const float WatchMarkerPositionTolerance = 0.001f;
         private const float KnotSnapDistance = 0.001f;
+        private const float MinimumHandleLength = 0.0001f;
 
         private readonly List<OrbitArcLengthSample> samples = new List<OrbitArcLengthSample>();
         private readonly List<OrbitWatchMarker> watchMarkers = new List<OrbitWatchMarker>();
@@ -30,6 +31,8 @@ namespace Gley.CameraSystem
         public OrbitRemovableSectionValidationResult RemovableSectionValidationResult { get; private set; }
         public float Length { get; private set; }
         public float MaximumSafeInwardZoom { get; private set; }
+        public float MaximumCornerTurn { get; private set; }
+        public int SharpestCornerKnotIndex { get; private set; }
         public bool IsClosed => ValidationResult == OrbitValidationResult.Valid;
 
         public ClosedBezierOrbit(VehicleOrbit orbit)
@@ -118,6 +121,8 @@ namespace Gley.CameraSystem
             bearingDistances.Clear();
             Length = 0f;
             MaximumSafeInwardZoom = float.PositiveInfinity;
+            MaximumCornerTurn = 0f;
+            SharpestCornerKnotIndex = -1;
             Bearing.Rebuild(bearingPositions, bearingDistances, Length);
             ValidationResult = ValidateOrbit();
             WatchMarkerValidationResult = ValidateWatchMarkers();
@@ -148,6 +153,8 @@ namespace Gley.CameraSystem
                 samples.Clear();
                 return;
             }
+
+            MeasureCornerTurns();
 
             for (int sampleIndex = 0; sampleIndex < samples.Count; sampleIndex++)
             {
@@ -439,6 +446,73 @@ namespace Gley.CameraSystem
                     previousPosition = currentPosition;
                 }
             }
+        }
+
+        private void MeasureCornerTurns()
+        {
+            IReadOnlyList<BezierOrbitKnot> knots = vehicleOrbit.Knots;
+
+            for (int knotIndex = 0; knotIndex < knots.Count; knotIndex++)
+            {
+                int previousKnotIndex = knotIndex - 1;
+                if (previousKnotIndex < 0)
+                {
+                    previousKnotIndex = knots.Count - 1;
+                }
+
+                int nextKnotIndex = knotIndex + 1;
+                if (nextKnotIndex == knots.Count)
+                {
+                    nextKnotIndex = 0;
+                }
+
+                BezierOrbitKnot previousKnot = knots[previousKnotIndex];
+                BezierOrbitKnot knot = knots[knotIndex];
+                BezierOrbitKnot nextKnot = knots[nextKnotIndex];
+
+                if (!TryGetTangentDirection(knot.Anchor - knot.IncomingControlPoint, knot.Anchor - previousKnot.OutgoingControlPoint, knot.Anchor - previousKnot.Anchor, out Vector3 incomingDirection))
+                {
+                    continue;
+                }
+
+                if (!TryGetTangentDirection(knot.OutgoingControlPoint - knot.Anchor, nextKnot.IncomingControlPoint - knot.Anchor, nextKnot.Anchor - knot.Anchor, out Vector3 outgoingDirection))
+                {
+                    continue;
+                }
+
+                float turn = Vector3.Angle(incomingDirection, outgoingDirection);
+                if (turn > MaximumCornerTurn)
+                {
+                    MaximumCornerTurn = turn;
+                    SharpestCornerKnotIndex = knotIndex;
+                }
+            }
+        }
+
+        private bool TryGetTangentDirection(Vector3 handle, Vector3 nearControlChord, Vector3 anchorChord, out Vector3 direction)
+        {
+            float minimumLengthSquared = MinimumHandleLength * MinimumHandleLength;
+
+            if (handle.sqrMagnitude > minimumLengthSquared)
+            {
+                direction = handle;
+                return true;
+            }
+
+            if (nearControlChord.sqrMagnitude > minimumLengthSquared)
+            {
+                direction = nearControlChord;
+                return true;
+            }
+
+            if (anchorChord.sqrMagnitude > minimumLengthSquared)
+            {
+                direction = anchorChord;
+                return true;
+            }
+
+            direction = Vector3.zero;
+            return false;
         }
 
         private bool HasSelfIntersection()

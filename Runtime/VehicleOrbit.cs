@@ -44,6 +44,11 @@ namespace Gley.CameraSystem
             name = orbitName;
         }
 
+        public void Rename(string orbitName)
+        {
+            name = orbitName;
+        }
+
         public void Configure(List<BezierOrbitKnot> orbitKnots, Quaternion referenceOrientationAdjustment)
         {
             knots = new List<BezierOrbitKnot>();
