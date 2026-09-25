@@ -14,7 +14,6 @@ namespace Gley.CameraSystem
         private readonly List<Transform> chainBodies = new List<Transform>();
         private readonly List<Transform> warnedBodies = new List<Transform>();
         private readonly List<CameraOwnershipMarker> ownershipMarkers = new List<CameraOwnershipMarker>();
-        private readonly List<Collider> ownBodyColliders = new List<Collider>();
         private readonly ChainOrbitBuilder chainOrbitBuilder = new ChainOrbitBuilder();
         private readonly OrbitRemapper orbitRemapper = new OrbitRemapper();
         private readonly StoredPoseResolver storedPoseResolver = new StoredPoseResolver();
@@ -39,6 +38,7 @@ namespace Gley.CameraSystem
         private readonly InteriorView interiorView = new InteriorView();
         private readonly SeatMotion seatMotion = new SeatMotion();
         private readonly CameraCollision cameraCollision = new CameraCollision();
+        private readonly OwnBodyColliderSet ownBodyColliders = new OwnBodyColliderSet();
 
         [SerializeField] private Camera assignedCamera;
         [SerializeField] private VehicleCameraTarget target;
@@ -67,6 +67,8 @@ namespace Gley.CameraSystem
         private bool isTargetLost;
         private bool isTransitioning;
         private bool hasBearingDestination;
+        private bool isPlanningTransition;
+        private bool isNoClearPoseReported;
 
         public event Action<int, CommandEndResult> CommandEnded
         {
@@ -114,11 +116,13 @@ namespace Gley.CameraSystem
         public float CushionIntensity => playerPreferences.CushionIntensity;
         public float OrbitSensitivity => playerPreferences.OrbitSensitivity;
         public float LookSensitivity => playerPreferences.LookSensitivity;
+        public int OwnBodyColliderCount => ownBodyColliders.Count;
         public bool IsActive => isActive;
         public bool IsTargetLost => isTargetLost;
         public bool IsPlayerControlLocked => commandArbiter.IsPlayerControlLocked;
         public bool IsSwitchingView => viewSwitcher.IsSwitching;
         public bool IsReverseActive => reverseController.IsReverseActive;
+        public bool HasNoClearPose => isNoClearPoseReported;
 
         private void LateUpdate()
         {
@@ -246,9 +250,7 @@ namespace Gley.CameraSystem
             WarnAboutRigidbodyInterpolation();
             if (options.Mode != TransitionMode.Snap)
             {
-                Vector3 destinationPosition;
-                Quaternion destinationRotation;
-                CalculateCameraPose(0f, out destinationPosition, out destinationRotation);
+                Vector3 destinationPosition = CalculateTransitionDestination();
                 float easeTime = activeView.Preset.Travel.EaseTime;
                 if (options.Mode == TransitionMode.Duration)
                 {
@@ -806,6 +808,11 @@ namespace Gley.CameraSystem
             ApplyHeldInput();
         }
 
+        public bool IsOwnBodyCollider(Collider candidate)
+        {
+            return ownBodyColliders.Contains(candidate);
+        }
+
         private bool IsBlockedByPlayerLock(CommandSource source)
         {
             return source == CommandSource.Player && commandArbiter.IsPlayerControlLocked;
@@ -829,6 +836,16 @@ namespace Gley.CameraSystem
         private bool CanApplyInteriorInput()
         {
             return isActive && !isTargetLost && !isTransitioning && !viewSwitcher.IsSwitching && !resetController.IsTravelling;
+        }
+
+        private Vector3 CalculateTransitionDestination()
+        {
+            isPlanningTransition = true;
+            Vector3 destinationPosition;
+            Quaternion destinationRotation;
+            CalculateCameraPose(0f, out destinationPosition, out destinationRotation);
+            isPlanningTransition = false;
+            return destinationPosition;
         }
 
         private int BeginViewSwitch(VehicleViewEntry view, VehicleOrbit orbit, ChainOrbit builtOrbit, TransitionOptions options)
@@ -865,9 +882,7 @@ namespace Gley.CameraSystem
                 return 0;
             }
 
-            Vector3 destinationPosition;
-            Quaternion destinationRotation;
-            CalculateCameraPose(0f, out destinationPosition, out destinationRotation);
+            Vector3 destinationPosition = CalculateTransitionDestination();
             viewSwitcher.Begin(rootBody, startPosition, startRotation, destinationPosition, options, view.Preset.Travel);
             hasBearingDestination = chainOrbit != null;
             destinationBearing = bearing;
@@ -937,9 +952,7 @@ namespace Gley.CameraSystem
                 return 0;
             }
 
-            Vector3 destinationPosition;
-            Quaternion destinationRotation;
-            CalculateCameraPose(0f, out destinationPosition, out destinationRotation);
+            Vector3 destinationPosition = CalculateTransitionDestination();
             viewSwitcher.Begin(rootBody, startPosition, startRotation, destinationPosition, options, view.Preset.Travel);
             hasBearingDestination = chainOrbit != null;
             destinationBearing = bearing;
@@ -1453,6 +1466,7 @@ namespace Gley.CameraSystem
 
         private void RebuildChainBodies()
         {
+            ownBodyColliders.Rebuild(target);
             chainBodies.Clear();
             if (activeOrbit != null && !activeOrbit.MergeWhenAttached)
             {
@@ -1545,6 +1559,7 @@ namespace Gley.CameraSystem
             orbitFrame = null;
             rootBody = null;
             chainBodies.Clear();
+            ownBodyColliders.Clear();
             orbitMovement.Clear();
             orbitMovement.ClearHeldIntent();
             interiorView.Clear();
@@ -1813,7 +1828,15 @@ namespace Gley.CameraSystem
                 return smoothedPosition;
             }
 
-            return cameraCollision.UpdateCollisionCorrection(smoothedPosition, composedWatchPoint, composedInwardNormal, orbitFrame.Up, composedZoom, orbitMovement.HeightOffset, activeOrbit, preset.Collision, ownBodyColliders, deltaTime);
+            if (IsCollisionSuspended())
+            {
+                cameraCollision.Suspend();
+                return smoothedPosition;
+            }
+
+            Vector3 correctedPosition = cameraCollision.UpdateCollisionCorrection(smoothedPosition, composedWatchPoint, composedInwardNormal, orbitFrame.Up, composedZoom, orbitMovement.HeightOffset, activeOrbit, preset.Collision, ownBodyColliders, deltaTime);
+            ReportNoClearPose();
+            return correctedPosition;
         }
 
         private bool IsCollisionView(CameraViewPreset preset)
@@ -1824,6 +1847,23 @@ namespace Gley.CameraSystem
             }
 
             return preset.ViewType == CameraViewType.Driving || preset.ViewType == CameraViewType.Presentation;
+        }
+
+        private bool IsCollisionSuspended()
+        {
+            return isPlanningTransition || isTransitioning || viewSwitcher.IsSwitching;
+        }
+
+        private void ReportNoClearPose()
+        {
+            bool hasNoClearPose = !cameraCollision.HasClearPose;
+            if (hasNoClearPose == isNoClearPoseReported)
+            {
+                return;
+            }
+
+            isNoClearPoseReported = hasNoClearPose;
+            NoClearPoseChanged?.Invoke(hasNoClearPose);
         }
 
         private Quaternion ComputeAim(Vector3 cameraPosition)
