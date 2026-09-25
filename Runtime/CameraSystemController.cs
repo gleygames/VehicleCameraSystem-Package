@@ -620,6 +620,7 @@ namespace Gley.CameraSystem
             }
 
             playerPreferences.CopyGlobalSettings(preferences);
+            seatMotion.SetCushionIntensity(playerPreferences.CushionIntensity);
             orbitMovement.SetSensitivity(playerPreferences.OrbitSensitivity);
             interiorView.SetSensitivity(playerPreferences.LookSensitivity);
             playerDefaults.Clear();
@@ -660,6 +661,7 @@ namespace Gley.CameraSystem
         public void SetCushionIntensity(float value)
         {
             playerPreferences.SetCushionIntensity(value);
+            seatMotion.SetCushionIntensity(playerPreferences.CushionIntensity);
         }
 
         public void SetSensitivity(float orbit, float look)
