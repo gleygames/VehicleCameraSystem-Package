@@ -14,6 +14,7 @@ namespace Gley.CameraSystem
         private readonly List<Transform> chainBodies = new List<Transform>();
         private readonly List<Transform> warnedBodies = new List<Transform>();
         private readonly List<CameraOwnershipMarker> ownershipMarkers = new List<CameraOwnershipMarker>();
+        private readonly List<Collider> ownBodyColliders = new List<Collider>();
         private readonly ChainOrbitBuilder chainOrbitBuilder = new ChainOrbitBuilder();
         private readonly OrbitRemapper orbitRemapper = new OrbitRemapper();
         private readonly StoredPoseResolver storedPoseResolver = new StoredPoseResolver();
@@ -37,6 +38,7 @@ namespace Gley.CameraSystem
         private readonly CameraPlayerPreferences playerPreferences = new CameraPlayerPreferences();
         private readonly InteriorView interiorView = new InteriorView();
         private readonly SeatMotion seatMotion = new SeatMotion();
+        private readonly CameraCollision cameraCollision = new CameraCollision();
 
         [SerializeField] private Camera assignedCamera;
         [SerializeField] private VehicleCameraTarget target;
@@ -54,10 +56,12 @@ namespace Gley.CameraSystem
         private Vector3 lastRootPosition;
         private Quaternion lastRootRotation = Quaternion.identity;
         private Vector3 seatOffset;
+        private Vector3 composedInwardNormal;
+        private Vector3 composedWatchPoint;
         [SerializeField] private string initialViewName;
         [SerializeField, Min(0f)] private float maximumFrameDeltaTime = 0.1f;
         private float destinationBearing;
-        private float composedOrbitDistance;
+        private float composedZoom;
         private int builtChainVersion;
         private bool isActive;
         private bool isTargetLost;
@@ -985,6 +989,7 @@ namespace Gley.CameraSystem
         {
             drivingFollow.Reset();
             aimSmoother.Reset();
+            cameraCollision.Reset();
         }
 
         private bool IsReverseView()
@@ -1729,7 +1734,7 @@ namespace Gley.CameraSystem
         {
             Vector3 targetPosition = ComputeTargetPose(deltaTime);
             Vector3 laggedPosition = ApplyFollowLag(targetPosition, deltaTime);
-            Vector3 correctedPosition = ApplyCollision(laggedPosition);
+            Vector3 correctedPosition = ApplyCollision(laggedPosition, deltaTime);
             Quaternion aim = ComputeAim(correctedPosition);
             cameraPosition = correctedPosition;
             cameraRotation = ApplyAimSmoothing(aim, deltaTime);
@@ -1750,14 +1755,15 @@ namespace Gley.CameraSystem
             }
 
             float orbitDistance = ApplyTurnLook(orbitMovement.OrbitDistance, deltaTime);
-            composedOrbitDistance = orbitDistance;
+            composedWatchPoint = orbitAim.EvaluateWatchPoint(chainOrbit, orbitDistance, aimFrame, rootBody, chainBodies);
             Vector3 localPosition = chainOrbit.EvaluateRootLocalPosition(orbitDistance);
             float bearing = chainOrbit.Bearing.BearingOfLocalPoint(localPosition);
             bool isReverseApplied = viewType == CameraViewType.Driving && reverseController.IsReverseActive;
             float speedOffset = speedDistance.Offset(rootMotionEstimator.Speed, bearing, activeView.Preset.Driving, isReverseApplied);
-            float zoom = distanceComposer.ComposeZoom(orbitMovement.PlayerZoom, speedOffset, activeOrbit);
+            composedZoom = distanceComposer.ComposeZoom(orbitMovement.PlayerZoom, speedOffset, activeOrbit);
+            composedInwardNormal = orbitFrame.ToWorldInwardNormal(chainOrbit.EvaluateRootLocalInwardNormal(orbitDistance));
             Vector3 position = orbitFrame.ToWorldPosition(localPosition);
-            position += orbitFrame.ToWorldInwardNormal(chainOrbit.EvaluateRootLocalInwardNormal(orbitDistance)) * zoom;
+            position += composedInwardNormal * composedZoom;
             position += orbitFrame.Up * orbitMovement.HeightOffset;
             return position;
         }
@@ -1798,9 +1804,26 @@ namespace Gley.CameraSystem
             return drivingFollow.UpdateDrivingFollow(targetPosition, deltaTime, preset.Driving);
         }
 
-        private Vector3 ApplyCollision(Vector3 smoothedPosition)
+        private Vector3 ApplyCollision(Vector3 smoothedPosition, float deltaTime)
         {
-            return smoothedPosition;
+            CameraViewPreset preset = activeView.Preset;
+            if (!IsCollisionView(preset))
+            {
+                cameraCollision.Reset();
+                return smoothedPosition;
+            }
+
+            return cameraCollision.UpdateCollisionCorrection(smoothedPosition, composedWatchPoint, composedInwardNormal, orbitFrame.Up, composedZoom, orbitMovement.HeightOffset, activeOrbit, preset.Collision, ownBodyColliders, deltaTime);
+        }
+
+        private bool IsCollisionView(CameraViewPreset preset)
+        {
+            if (chainOrbit == null || !preset.Collision.Enabled)
+            {
+                return false;
+            }
+
+            return preset.ViewType == CameraViewType.Driving || preset.ViewType == CameraViewType.Presentation;
         }
 
         private Quaternion ComputeAim(Vector3 cameraPosition)
@@ -1819,8 +1842,7 @@ namespace Gley.CameraSystem
                 return orbitAim.ComputeAim(cameraPosition, fixedWatchPoint, rootBody.up, imageRollFollow, fallbackRotation);
             }
 
-            Vector3 watchPoint = orbitAim.EvaluateWatchPoint(chainOrbit, composedOrbitDistance, aimFrame, rootBody, chainBodies);
-            return orbitAim.ComputeAim(cameraPosition, watchPoint, orbitFrame.Up, imageRollFollow, fallbackRotation);
+            return orbitAim.ComputeAim(cameraPosition, composedWatchPoint, orbitFrame.Up, imageRollFollow, fallbackRotation);
         }
 
         private Quaternion ApplyAimSmoothing(Quaternion aim, float deltaTime)
