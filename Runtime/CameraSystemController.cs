@@ -342,33 +342,70 @@ namespace Gley.CameraSystem
                 return CameraCommandResult.Accepted;
             }
 
+            int commandId;
+            return ChangeTarget(newTarget, null, new TransitionOptions(TransitionMode.Snap), false, out commandId);
+        }
+
+        public CameraCommandResult ChangeTarget(VehicleCameraTarget newTarget, TransitionOptions options, bool preserveBearing, out int commandId)
+        {
+            return ChangeTarget(newTarget, null, options, preserveBearing, out commandId);
+        }
+
+        public CameraCommandResult ChangeTarget(VehicleCameraTarget newTarget, string viewName, TransitionOptions options, bool preserveBearing, out int commandId)
+        {
+            commandId = 0;
+            if (!isActive)
+            {
+                target = newTarget;
+                if (!string.IsNullOrEmpty(viewName))
+                {
+                    initialViewName = viewName;
+                }
+
+                return CameraCommandResult.Accepted;
+            }
+
             if (!IsTargetConfigured(newTarget))
             {
-                ReportRejection($"{name}: SetTarget rejected: {CameraCommandResult.MissingTarget}.");
+                ReportRejection($"{name}: ChangeTarget rejected: {CameraCommandResult.MissingTarget}.");
                 return CameraCommandResult.MissingTarget;
+            }
+
+            string destinationViewName = viewName;
+            if (string.IsNullOrEmpty(destinationViewName))
+            {
+                destinationViewName = activeView.Name;
             }
 
             VehicleViewEntry view;
             VehicleOrbit orbit;
             ChainOrbit builtOrbit;
-            CameraCommandResult result = ValidateView(newTarget, activeView.Name, out view, out orbit, out builtOrbit);
+            CameraCommandResult result = ValidateView(newTarget, destinationViewName, out view, out orbit, out builtOrbit);
             if (result != CameraCommandResult.Accepted)
             {
-                ReportRejection($"{name}: SetTarget '{newTarget.name}' with view '{activeView.Name}' rejected: {result}.");
+                ReportRejection($"{name}: ChangeTarget '{newTarget.name}' with view '{destinationViewName}' rejected: {result}.");
                 return result;
             }
 
-            EndRunningCommand(CommandEndResult.Replaced);
-            viewSwitcher.ClearAdjustments();
-            UnsubscribeFromTarget();
-            target = newTarget;
-            SubscribeToTarget();
-            isTargetLost = false;
-            ApplyView(view, orbit, builtOrbit);
-            rootMotionEstimator.Configure(target, Vector3.zero);
-            WarnAboutRigidbodyInterpolation();
-            WriteCameraPose(0f);
+            commandId = BeginTargetChange(newTarget, view, orbit, builtOrbit, options, preserveBearing);
             return CameraCommandResult.Accepted;
+        }
+
+        public void ShiftOrigin(Vector3 offset)
+        {
+            if (!isActive)
+            {
+                return;
+            }
+
+            drivingFollow.ShiftOrigin(offset);
+            rootMotionEstimator.ShiftOrigin(offset);
+            activationTransition.ShiftOrigin(offset);
+            lastRootPosition += offset;
+            if (isTargetLost && assignedCamera != null)
+            {
+                assignedCamera.transform.position += offset;
+            }
         }
 
         public CameraCommandResult RequestPoint(string pointName)
@@ -794,9 +831,69 @@ namespace Gley.CameraSystem
                 return;
             }
 
+            bool isNameChanged = committedView == null || committedView.Name != activeView.Name;
             committedView = activeView;
             renderingState.ApplyRenderingSettings(activeView.Preset.Rendering);
-            ViewChanged?.Invoke(activeView.Id);
+            if (isNameChanged)
+            {
+                ViewChanged?.Invoke(activeView.Id);
+            }
+        }
+
+        private int BeginTargetChange(VehicleCameraTarget newTarget, VehicleViewEntry view, VehicleOrbit orbit, ChainOrbit builtOrbit, TransitionOptions options, bool preserveBearing)
+        {
+            Vector3 startPosition = assignedCamera.transform.position;
+            Quaternion startRotation = assignedCamera.transform.rotation;
+            float sourceBearing = 0f;
+            bool hasSourceBearing = false;
+            if (preserveBearing && builtOrbit != null)
+            {
+                hasSourceBearing = viewSwitcher.TryGetOrbitBearing(chainOrbit, orbitMovement.OrbitDistance, out sourceBearing);
+            }
+
+            viewSwitcher.Stop();
+            int commandId = 0;
+            if (options.Mode == TransitionMode.Snap)
+            {
+                EndRunningCommand(CommandEndResult.Replaced);
+            }
+            else
+            {
+                commandId = BeginCommand(CommandKind.TargetChange, options.LockPlayerControl);
+            }
+
+            viewSwitcher.ClearAdjustments();
+            UnsubscribeFromTarget();
+            target = newTarget;
+            SubscribeToTarget();
+            isTargetLost = false;
+            OrbitPose authoredPose = view.DefaultPose;
+            float bearing = authoredPose.Bearing;
+            if (hasSourceBearing)
+            {
+                bearing = viewSwitcher.GetNearestAllowedBearing(sourceBearing, view.Preset.OrbitMovement);
+            }
+
+            LivePose pose = storedPoseResolver.Resolve(new OrbitPose(bearing, authoredPose.ZoomOffset, authoredPose.HeightOffset), builtOrbit, orbit, 0f);
+            ApplyViewGeometry(view, orbit, builtOrbit, pose);
+            turnLook.Resume();
+            rootMotionEstimator.Configure(target, Vector3.zero);
+            WarnAboutRigidbodyInterpolation();
+            if (options.Mode == TransitionMode.Snap)
+            {
+                WriteCameraPose(0f);
+                CommitActiveView();
+                return 0;
+            }
+
+            Vector3 destinationPosition;
+            Quaternion destinationRotation;
+            CalculateCameraPose(0f, out destinationPosition, out destinationRotation);
+            viewSwitcher.Begin(rootBody, startPosition, startRotation, destinationPosition, options, view.Preset.Travel);
+            hasBearingDestination = chainOrbit != null;
+            destinationBearing = bearing;
+            WriteCameraPose(0f);
+            return commandId;
         }
 
         private CameraCommandResult GetPointTravelAvailability(CommandSource source)
@@ -1138,6 +1235,7 @@ namespace Gley.CameraSystem
 
             target.ChainChanged += HandleChainChanged;
             target.Teleported += HandleTeleported;
+            target.OriginShifted += ShiftOrigin;
             target.Destroyed += HandleTargetDestroyed;
             subscribedTarget = target;
         }
@@ -1151,6 +1249,7 @@ namespace Gley.CameraSystem
 
             subscribedTarget.ChainChanged -= HandleChainChanged;
             subscribedTarget.Teleported -= HandleTeleported;
+            subscribedTarget.OriginShifted -= ShiftOrigin;
             subscribedTarget.Destroyed -= HandleTargetDestroyed;
             subscribedTarget = null;
         }
@@ -1343,6 +1442,7 @@ namespace Gley.CameraSystem
             }
 
             ResetFollowSmoothing();
+            rootMotionEstimator.Reset();
             WriteCameraPose(0f);
         }
 

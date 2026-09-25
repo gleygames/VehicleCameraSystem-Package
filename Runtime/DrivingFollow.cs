@@ -49,6 +49,12 @@ namespace Gley.CameraSystem
             isSnapPending = true;
         }
 
+        public void ShiftOrigin(Vector3 offset)
+        {
+            laggedPosition += offset;
+            previousTargetPosition += offset;
+        }
+
         private void ClampLag(Vector3 targetPosition, float maximumLag)
         {
             Vector3 lag = laggedPosition - targetPosition;

@@ -46,6 +46,11 @@ namespace Gley.CameraSystem
             cameraRotation = Quaternion.Slerp(startRotation, destinationRotation, Progress);
         }
 
+        public void ShiftOrigin(Vector3 offset)
+        {
+            startPosition += offset;
+        }
+
         public void RelocateStart(Vector3 initialPosition, Quaternion initialRotation)
         {
             startPosition = initialPosition;
