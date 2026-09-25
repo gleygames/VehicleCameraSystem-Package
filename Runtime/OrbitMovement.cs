@@ -53,7 +53,7 @@ namespace Gley.CameraSystem
             heightOffset = ClampHeight(pose.HeightOffset);
             windingSign = CalculateWindingSign();
             UpdateAngleLimits();
-            ClampToAngleLimits();
+            orbitDistance = ClampDistanceToAngleLimits(orbitDistance);
         }
 
         public void UpdateOrbitMovement(float deltaTime)
@@ -108,6 +108,28 @@ namespace Gley.CameraSystem
         public void SetOrbitDistance(float distance)
         {
             orbitDistance = distance;
+        }
+
+        public void SetZoomAndHeight(float zoom, float height)
+        {
+            if (orbit == null)
+            {
+                return;
+            }
+
+            playerZoom = ClampZoom(zoom);
+            heightOffset = ClampHeight(height);
+        }
+
+        public float ClampDistanceToAngleLimits(float distance)
+        {
+            if (!hasAngleLimits || orbit == null)
+            {
+                return distance;
+            }
+
+            float relative = GetLimitRelativeDistance(distance);
+            return distance + Mathf.Clamp(relative, 0f, limitArcLength) - relative;
         }
 
         public void StopManualTravel()
@@ -215,17 +237,6 @@ namespace Gley.CameraSystem
             }
 
             hasAngleLimits = true;
-        }
-
-        private void ClampToAngleLimits()
-        {
-            if (!hasAngleLimits)
-            {
-                return;
-            }
-
-            float relative = GetLimitRelativeDistance(orbitDistance);
-            orbitDistance += Mathf.Clamp(relative, 0f, limitArcLength) - relative;
         }
 
         private void UpdateTravelSpeed(float deltaTime)

@@ -11,6 +11,7 @@ namespace Gley.CameraSystem
 
         private readonly List<int> orderedPoints = new List<int>(InitialPointCapacity);
         private readonly TravelProfile travelProfile = new TravelProfile();
+        private readonly OrbitRoutePlanner routePlanner = new OrbitRoutePlanner();
 
         private ChainOrbit orbit;
         private OrbitMovement movement;
@@ -283,80 +284,20 @@ namespace Gley.CameraSystem
         private CameraCommandResult PlanRoute(int markerIndex, TravelDirection direction)
         {
             MergedMarker marker = orbit.MergedMarkers[markerIndex];
-            float length = orbit.Length;
-            float current = Mathf.Repeat(movement.OrbitDistance, length);
-            float destination = Mathf.Repeat(marker.OrbitDistance, length);
-            float routeLength;
-            float sign = 1f;
-            if (movement.HasAngleLimits)
+            CameraCommandResult result = routePlanner.Plan(orbit.Length, movement, marker.OrbitDistance, direction);
+            if (result != CameraCommandResult.Accepted)
             {
-                float arcLength = movement.LimitArcLength;
-                float destinationRelative = movement.GetLimitRelativeDistance(destination);
-                if (destinationRelative < -ArrivalTolerance || destinationRelative > arcLength + ArrivalTolerance)
-                {
-                    return CameraCommandResult.Unreachable;
-                }
-
-                float currentRelative = Mathf.Clamp(movement.GetLimitRelativeDistance(current), 0f, arcLength);
-                float delta = Mathf.Clamp(destinationRelative, 0f, arcLength) - currentRelative;
-                routeLength = Mathf.Abs(delta);
-                if (delta < 0f)
-                {
-                    sign = -1f;
-                }
-
-                if (routeLength > ArrivalTolerance && direction != TravelDirection.Shortest && GetDirectionSign(direction) != sign)
-                {
-                    return CameraCommandResult.Unreachable;
-                }
-            }
-            else
-            {
-                float forward = Mathf.Repeat(destination - current, length);
-                float backward = length - forward;
-                if (forward <= ArrivalTolerance || backward <= ArrivalTolerance)
-                {
-                    forward = 0f;
-                    backward = 0f;
-                }
-
-                if (direction == TravelDirection.Shortest)
-                {
-                    if (backward < forward)
-                    {
-                        sign = -1f;
-                    }
-                }
-                else
-                {
-                    sign = GetDirectionSign(direction);
-                }
-
-                routeLength = forward;
-                if (sign < 0f)
-                {
-                    routeLength = backward;
-                }
+                return result;
             }
 
             plannedOwner = marker.OwnerBody;
             plannedMarkerId = marker.MarkerId;
             plannedDirection = direction;
-            plannedStartDistance = current;
-            plannedDestinationDistance = destination;
-            plannedRouteLength = routeLength;
-            plannedRouteSign = sign;
+            plannedStartDistance = routePlanner.StartDistance;
+            plannedDestinationDistance = routePlanner.DestinationDistance;
+            plannedRouteLength = routePlanner.RouteLength;
+            plannedRouteSign = routePlanner.RouteSign;
             return CameraCommandResult.Accepted;
-        }
-
-        private float GetDirectionSign(TravelDirection direction)
-        {
-            if (direction == TravelDirection.CounterClockwise)
-            {
-                return movement.IncreasingBearingSign;
-            }
-
-            return -movement.IncreasingBearingSign;
         }
 
         private CameraCommandResult PlanNeighbour(int step, bool wrap, TravelDirection direction)
