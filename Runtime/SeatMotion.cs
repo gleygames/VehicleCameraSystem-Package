@@ -8,6 +8,7 @@ namespace Gley.CameraSystem
         private readonly List<ISeatModule> modules = new List<ISeatModule>(3);
         private readonly MotionEstimator estimator = new MotionEstimator();
         private readonly AccelerationBrakingModule accelerationBraking = new AccelerationBrakingModule();
+        private readonly CorneringModule cornering = new CorneringModule();
 
         private SeatSettings seat;
 
@@ -53,6 +54,8 @@ namespace Gley.CameraSystem
             modules.Clear();
             accelerationBraking.Configure(settings.AccelerationBrakingEnabled, settings.AccelerationStrength, settings.BrakingStrength, settings.AccelerationCorneringResponse);
             modules.Add(accelerationBraking);
+            cornering.Configure(settings.CorneringEnabled, settings.CorneringStrength, settings.AccelerationCorneringResponse);
+            modules.Add(cornering);
             estimator.Configure(target, seat.EyeLocalPosition);
         }
 
@@ -73,6 +76,7 @@ namespace Gley.CameraSystem
         {
             estimator.Reset();
             accelerationBraking.Reset();
+            cornering.Reset();
         }
 
         public void Clear()
@@ -81,6 +85,7 @@ namespace Gley.CameraSystem
             seat = null;
             estimator.Configure(null, Vector3.zero);
             accelerationBraking.Reset();
+            cornering.Reset();
         }
     }
 }
