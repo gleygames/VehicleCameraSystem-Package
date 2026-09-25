@@ -17,10 +17,12 @@ namespace Gley.CameraSystem.Editor
         private readonly List<IVehicleCameraTab> tabs = new List<IVehicleCameraTab>();
 
         [SerializeField] private VehicleProfile profile;
+        [SerializeField] private ProfileGenerationSettings generationSettings = new ProfileGenerationSettings();
         [SerializeField] private Vector2 scrollPosition;
         private VehicleCameraWindowContext context;
         private VehicleCameraValidationPanel validationPanel;
-        private VehicleCameraAssetSaver assetSaver;
+        private ProfileAssetSaver profileSaver;
+        private SerializedObject serializedWindow;
         [SerializeField] private int selectedTabIndex;
         [SerializeField] private bool isAdvancedExpanded;
 
@@ -39,10 +41,16 @@ namespace Gley.CameraSystem.Editor
             context = new VehicleCameraWindowContext(new VehicleCameraValidationCollector(inputSystemInstallation));
             context.SetProfile(profile);
             validationPanel = new VehicleCameraValidationPanel(context);
-            assetSaver = new VehicleCameraAssetSaver(properties);
+            profileSaver = new ProfileAssetSaver(new VehicleCameraAssetSaver(properties));
+            if (generationSettings == null)
+            {
+                generationSettings = new ProfileGenerationSettings();
+            }
+
+            serializedWindow = new SerializedObject(this);
 
             tabs.Clear();
-            tabs.Add(new VehicleCameraSetupTab(context, inputSystemInstallation));
+            tabs.Add(new VehicleCameraSetupTab(context, inputSystemInstallation, profileSaver, generationSettings, serializedWindow, serializedWindow.FindProperty(nameof(generationSettings))));
             tabs.Add(new VehicleCameraOrbitsTab(context));
             tabs.Add(new VehicleCameraViewsTab(context));
             tabs.Add(new VehicleCameraConnectionsTab(context));
@@ -170,6 +178,11 @@ namespace Gley.CameraSystem.Editor
                 return;
             }
 
+            if (context.Profile != profile)
+            {
+                profile = context.Profile;
+            }
+
             if (Event.current.type == EventType.Layout && context.AreIssuesDirty)
             {
                 CollectIssues();
@@ -216,16 +229,12 @@ namespace Gley.CameraSystem.Editor
         private void CreateNewProfile()
         {
             EditorApplication.delayCall -= CreateNewProfile;
-            string path = assetSaver.RequestSavePath("New Vehicle Profile", "Vehicle Profile", VehicleCameraAssetSaver.ProfilesFolder);
-            if (string.IsNullOrEmpty(path))
+            VehicleProfile newProfile = CreateInstance<VehicleProfile>();
+            if (profileSaver.SaveNewProfile(newProfile, "Vehicle Profile") == null)
             {
+                DestroyImmediate(newProfile);
                 return;
             }
-
-            VehicleProfile newProfile = CreateInstance<VehicleProfile>();
-            newProfile.EnsureProfileId();
-            AssetDatabase.CreateAsset(newProfile, path);
-            AssetDatabase.SaveAssets();
 
             if (context != null)
             {
@@ -280,6 +289,11 @@ namespace Gley.CameraSystem.Editor
             SceneView.duringSceneGui -= HandleSceneGUI;
             ObjectChangeEvents.changesPublished -= HandleChangesPublished;
             EditorApplication.delayCall -= CreateNewProfile;
+            if (serializedWindow != null)
+            {
+                serializedWindow.Dispose();
+                serializedWindow = null;
+            }
         }
     }
 }

@@ -13,6 +13,7 @@ namespace Gley.CameraSystem
         [SerializeField] private OrbitRemovableSection rearRemovableSection;
         [SerializeField] private Quaternion orientationAdjustment = Quaternion.identity;
         [SerializeField] private string name;
+        [SerializeField] private float baseHeight;
         [SerializeField] private float minimumHeightOffset = -2f;
         [SerializeField] private float maximumHeightOffset = 2f;
         [SerializeField] private float minimumZoomOffset = -2f;
@@ -27,6 +28,7 @@ namespace Gley.CameraSystem
         public OrbitRemovableSection RearRemovableSection => rearRemovableSection;
         public Quaternion OrientationAdjustment => orientationAdjustment;
         public string Name => name;
+        public float BaseHeight => baseHeight;
         public float MinimumHeightOffset => minimumHeightOffset;
         public float MaximumHeightOffset => maximumHeightOffset;
         public float MinimumZoomOffset => minimumZoomOffset;
@@ -74,6 +76,11 @@ namespace Gley.CameraSystem
         public void AddWatchMarker(OrbitWatchMarker marker)
         {
             watchMarkers.Add(marker);
+        }
+
+        public void ConfigureBaseHeight(float height)
+        {
+            baseHeight = height;
         }
 
         public void ConfigureOffsetRanges(float minimumHeight, float maximumHeight, float minimumZoom, float maximumZoom)

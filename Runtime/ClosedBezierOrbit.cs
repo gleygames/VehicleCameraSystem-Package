@@ -45,7 +45,7 @@ namespace Gley.CameraSystem
         public Vector3 EvaluateBodyLocalPosition(float distance)
         {
             Vector3 orbitLocalPosition = EvaluateOrbitLocalPosition(distance);
-            return vehicleOrbit.OrientationAdjustment * orbitLocalPosition;
+            return vehicleOrbit.OrientationAdjustment * (orbitLocalPosition + Vector3.up * vehicleOrbit.BaseHeight);
         }
 
         public Vector3 EvaluateWorldPosition(Transform vehicleBody, float distance)
@@ -158,7 +158,7 @@ namespace Gley.CameraSystem
 
             for (int sampleIndex = 0; sampleIndex < samples.Count; sampleIndex++)
             {
-                bearingPositions.Add(vehicleOrbit.OrientationAdjustment * samples[sampleIndex].Position);
+                bearingPositions.Add(vehicleOrbit.OrientationAdjustment * (samples[sampleIndex].Position + Vector3.up * vehicleOrbit.BaseHeight));
                 bearingDistances.Add(samples[sampleIndex].Distance);
             }
 

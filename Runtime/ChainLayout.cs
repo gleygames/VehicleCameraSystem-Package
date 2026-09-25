@@ -155,10 +155,12 @@ namespace Gley.CameraSystem
 
             Vector3 frontPlaneNormal = orbits[index].OrientationAdjustment * Vector3.up;
             Vector3 rearPlaneNormal = orbits[index + 1].OrientationAdjustment * Vector3.up;
-            if (Mathf.Abs(Vector3.Dot(frontAnchors.FrontLocalPosition, frontPlaneNormal)) > PositionTolerance
-                || Mathf.Abs(Vector3.Dot(frontAnchors.RearLocalPosition, frontPlaneNormal)) > PositionTolerance
-                || Mathf.Abs(Vector3.Dot(rearAnchors.FrontLocalPosition, rearPlaneNormal)) > PositionTolerance
-                || Mathf.Abs(Vector3.Dot(rearAnchors.RearLocalPosition, rearPlaneNormal)) > PositionTolerance)
+            float frontBaseHeight = orbits[index].BaseHeight;
+            float rearBaseHeight = orbits[index + 1].BaseHeight;
+            if (Mathf.Abs(Vector3.Dot(frontAnchors.FrontLocalPosition, frontPlaneNormal) - frontBaseHeight) > PositionTolerance
+                || Mathf.Abs(Vector3.Dot(frontAnchors.RearLocalPosition, frontPlaneNormal) - frontBaseHeight) > PositionTolerance
+                || Mathf.Abs(Vector3.Dot(rearAnchors.FrontLocalPosition, rearPlaneNormal) - rearBaseHeight) > PositionTolerance
+                || Mathf.Abs(Vector3.Dot(rearAnchors.RearLocalPosition, rearPlaneNormal) - rearBaseHeight) > PositionTolerance)
             {
                 return false;
             }

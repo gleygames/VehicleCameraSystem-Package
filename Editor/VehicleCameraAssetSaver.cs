@@ -7,7 +7,7 @@ namespace Gley.CameraSystem.Editor
     public class VehicleCameraAssetSaver
     {
         public const string ProfilesFolder = "Assets/VehicleCameraSystemData/Profiles";
-        private const string LastFolderKey = "Gley.VehicleCameraSystem.LastSaveFolder";
+        public const string LastFolderKey = "Gley.VehicleCameraSystem.LastSaveFolder";
 
         private readonly ISettingsWindowProperties windowProperties;
 
@@ -51,7 +51,7 @@ namespace Gley.CameraSystem.Editor
             return normalizedPath.StartsWith(packageFolder + "/", StringComparison.OrdinalIgnoreCase) || string.Equals(normalizedPath, packageFolder, StringComparison.OrdinalIgnoreCase);
         }
 
-        private string GetStartFolder(string suggestedFolder)
+        public string GetStartFolder(string suggestedFolder)
         {
             string lastFolder = EditorPrefs.GetString(LastFolderKey, string.Empty);
             if (!string.IsNullOrEmpty(lastFolder) && AssetDatabase.IsValidFolder(lastFolder) && !IsInsidePackageFolder(lastFolder))

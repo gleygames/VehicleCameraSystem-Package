@@ -80,8 +80,16 @@ namespace Gley.CameraSystem.Editor
 
             context.DrawRenameNotice(orbit.Id);
             EditorGUILayout.LabelField("Knots", orbit.Knots.Count.ToString());
+            float newBaseHeight = EditorGUILayout.DelayedFloatField("Base height (m)", orbit.BaseHeight);
+            if (newBaseHeight != orbit.BaseHeight)
+            {
+                context.RecordProfileChange("Change Orbit Base Height");
+                orbit.ConfigureBaseHeight(newBaseHeight);
+                context.CompleteProfileChange();
+            }
+
             EditorGUILayout.LabelField("Zoom range", $"{orbit.MinimumZoomOffset:0.##} to {orbit.MaximumZoomOffset:0.##} m");
-            EditorGUILayout.LabelField("Height range", $"{orbit.MinimumHeightOffset:0.##} to {orbit.MaximumHeightOffset:0.##} m");
+            EditorGUILayout.LabelField("Height range", $"{orbit.MinimumHeightOffset:0.##} to {orbit.MaximumHeightOffset:0.##} m above the base height");
 
             string mergeText = "No";
             if (orbit.MergeWhenAttached)

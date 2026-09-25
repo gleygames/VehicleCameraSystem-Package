@@ -256,7 +256,7 @@ namespace Gley.CameraSystem.Editor
                     problem = "the curve needs at least 3 knots.";
                     break;
                 case OrbitValidationResult.NonPlanar:
-                    problem = "every knot and handle must lie in the orbit's plane (local height 0).";
+                    problem = "every knot and handle must lie in the orbit's plane (local height 0; the orbit's base height raises the whole plane).";
                     break;
                 case OrbitValidationResult.SelfIntersecting:
                     problem = "the curve crosses itself.";

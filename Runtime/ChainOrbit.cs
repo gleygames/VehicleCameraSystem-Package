@@ -679,7 +679,7 @@ namespace Gley.CameraSystem
         private List<OrbitSourceSegment> CreateSourceSegments(int bodyIndex)
         {
             VehicleOrbit vehicleOrbit = bodyOrbits[bodyIndex];
-            Vector3 positionOffset = bodyOffsets[bodyIndex];
+            Vector3 positionOffset = bodyOffsets[bodyIndex] + vehicleOrbit.OrientationAdjustment * (Vector3.up * vehicleOrbit.BaseHeight);
             List<OrbitSourceSegment> sourceSegments = new List<OrbitSourceSegment>();
             float startDistance = 0f;
 
