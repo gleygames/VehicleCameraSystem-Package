@@ -23,8 +23,10 @@ namespace Gley.CameraSystem
         private float startHeight;
         private float destinationZoom;
         private float destinationHeight;
+        private float plannedRouteLength;
         private bool isTravelling;
 
+        public float PlannedRouteLength => plannedRouteLength;
         public bool IsTravelling => isTravelling;
 
         public bool UpdateOrbitPoseTravel(float deltaTime)
@@ -58,7 +60,16 @@ namespace Gley.CameraSystem
             plannedDirection = direction;
             plannedZoom = destination.ZoomOffset;
             plannedHeight = destination.HeightOffset;
-            return routePlanner.Plan(orbit.Length, movement, destination.OrbitDistance, direction);
+            CameraCommandResult result = routePlanner.Plan(orbit.Length, movement, destination.OrbitDistance, direction);
+            if (result == CameraCommandResult.Accepted)
+            {
+                float zoomChange = plannedZoom - movement.PlayerZoom;
+                float heightChange = plannedHeight - movement.HeightOffset;
+                float arc = routePlanner.RouteLength;
+                plannedRouteLength = Mathf.Sqrt(arc * arc + zoomChange * zoomChange + heightChange * heightChange);
+            }
+
+            return result;
         }
 
         public void BeginPlannedTravel(TransitionOptions speed, TravelSettings settings)

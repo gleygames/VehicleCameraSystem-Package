@@ -134,6 +134,15 @@ namespace Gley.CameraSystem
             }
         }
 
+        public void ClearAdjustment(int viewId)
+        {
+            int index = FindAdjustment(viewId);
+            if (index >= 0)
+            {
+                adjustments.RemoveAt(index);
+            }
+        }
+
         public void Stop()
         {
             isSwitching = false;

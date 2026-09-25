@@ -15,6 +15,7 @@ namespace Gley.CameraSystem
         NoNextPoint,
         Unreachable,
         PlayerControlLocked,
-        InvalidWhileActive
+        InvalidWhileActive,
+        NotSupportedInView
     }
 }

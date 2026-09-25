@@ -8,6 +8,9 @@ namespace Gley.CameraSystem
     [DefaultExecutionOrder(10000)]
     public class CameraSystemController : MonoBehaviour
     {
+        private const string OrbitResetName = "OrbitReset";
+        private const string FullResetName = "FullReset";
+
         private readonly List<Transform> chainBodies = new List<Transform>();
         private readonly List<Transform> warnedBodies = new List<Transform>();
         private readonly List<CameraOwnershipMarker> ownershipMarkers = new List<CameraOwnershipMarker>();
@@ -28,6 +31,9 @@ namespace Gley.CameraSystem
         private readonly AimSmoother aimSmoother = new AimSmoother();
         private readonly ReverseController reverseController = new ReverseController();
         private readonly TurnLook turnLook = new TurnLook();
+        private readonly PlayerDefaults playerDefaults = new PlayerDefaults();
+        private readonly ResetController resetController = new ResetController();
+        private readonly Recenter recenter = new Recenter();
 
         [SerializeField] private Camera assignedCamera;
         [SerializeField] private VehicleCameraTarget target;
@@ -504,6 +510,41 @@ namespace Gley.CameraSystem
             return CameraCommandResult.Accepted;
         }
 
+        public CameraCommandResult OrbitReset()
+        {
+            int commandId;
+            return OrbitReset(CommandSource.Game, out commandId);
+        }
+
+        public CameraCommandResult OrbitReset(CommandSource source, out int commandId)
+        {
+            return RequestReset(false, source, out commandId);
+        }
+
+        public CameraCommandResult FullReset()
+        {
+            int commandId;
+            return FullReset(CommandSource.Game, out commandId);
+        }
+
+        public CameraCommandResult FullReset(CommandSource source, out int commandId)
+        {
+            return RequestReset(true, source, out commandId);
+        }
+
+        public CameraCommandResult SaveCurrentPoseAsDefault(DefaultSlot slot)
+        {
+            CameraCommandResult result = GetSaveDefaultAvailability();
+            if (result != CameraCommandResult.Accepted)
+            {
+                ReportRejection($"{name}: SaveCurrentPoseAsDefault {slot} rejected: {result}.");
+                return result;
+            }
+
+            playerDefaults.SaveCurrentPoseAsDefault(rootProfile.ProfileId, activeView.Id, slot, chainOrbit, orbitMovement.Pose);
+            return CameraCommandResult.Accepted;
+        }
+
         public CameraCommandResult SetHeldIntent(float horizontal, float vertical, float zoom)
         {
             HeldInputGate heldInput = commandArbiter.HeldInput;
@@ -560,6 +601,7 @@ namespace Gley.CameraSystem
                 return CameraCommandResult.Accepted;
             }
 
+            recenter.NoteGestureInput();
             if (!AcceptPlayerInput())
             {
                 return CameraCommandResult.PlayerControlLocked;
@@ -585,6 +627,7 @@ namespace Gley.CameraSystem
                 return CameraCommandResult.Accepted;
             }
 
+            recenter.NoteGestureInput();
             if (!AcceptPlayerInput())
             {
                 return CameraCommandResult.PlayerControlLocked;
@@ -728,9 +771,19 @@ namespace Gley.CameraSystem
 
         private OrbitPose GetFrontDefaultPose()
         {
-            OrbitPose frontDefault = activeView.FrontDefaultPose;
-            float bearing = viewSwitcher.GetNearestAllowedBearing(frontDefault.Bearing, activeView.Preset.OrbitMovement);
-            return new OrbitPose(bearing, frontDefault.ZoomOffset, frontDefault.HeightOffset);
+            OrbitPose frontDefault;
+            if (!playerDefaults.TryGetDefault(rootProfile.ProfileId, activeView.Id, DefaultSlot.Front, out frontDefault))
+            {
+                frontDefault = activeView.FrontDefaultPose;
+            }
+
+            return MapToAllowedBearing(frontDefault);
+        }
+
+        private OrbitPose MapToAllowedBearing(OrbitPose pose)
+        {
+            float bearing = viewSwitcher.GetNearestAllowedBearing(pose.Bearing, activeView.Preset.OrbitMovement);
+            return new OrbitPose(bearing, pose.ZoomOffset, pose.HeightOffset);
         }
 
         private int BeginCommand(CommandKind kind, bool holdsLock)
@@ -747,6 +800,7 @@ namespace Gley.CameraSystem
             hasBearingDestination = false;
             pointOfInterestTravel.Stop();
             reverseController.StopTravel();
+            resetController.StopTravel();
             if (viewSwitcher.IsSwitching)
             {
                 viewSwitcher.Stop();
@@ -758,6 +812,148 @@ namespace Gley.CameraSystem
         {
             HeldInputGate heldInput = commandArbiter.HeldInput;
             orbitMovement.SetHeldIntent(heldInput.Horizontal, heldInput.Vertical, heldInput.Zoom);
+        }
+
+        private CameraCommandResult RequestReset(bool isFullReset, CommandSource source, out int commandId)
+        {
+            commandId = 0;
+            CameraCommandResult result = GetResetAvailability(source);
+            if (result == CameraCommandResult.Accepted && IsOrbitResetView())
+            {
+                result = BeginReset(isFullReset, false, out commandId);
+            }
+
+            if (result != CameraCommandResult.Accepted)
+            {
+                string commandName = OrbitResetName;
+                if (isFullReset)
+                {
+                    commandName = FullResetName;
+                }
+
+                ReportRejection($"{name}: {commandName} rejected: {result}.");
+            }
+
+            return result;
+        }
+
+        private CameraCommandResult GetResetAvailability(CommandSource source)
+        {
+            if (!isActive)
+            {
+                return CameraCommandResult.NotActive;
+            }
+
+            if (isTargetLost || !IsTargetAlive())
+            {
+                return CameraCommandResult.MissingTarget;
+            }
+
+            if (IsBlockedByPlayerLock(source))
+            {
+                return CameraCommandResult.PlayerControlLocked;
+            }
+
+            if (IsOrbitResetView() && chainOrbit == null)
+            {
+                return CameraCommandResult.ViewInvalid;
+            }
+
+            return CameraCommandResult.Accepted;
+        }
+
+        private bool IsOrbitResetView()
+        {
+            CameraViewType viewType = activeView.Preset.ViewType;
+            return viewType == CameraViewType.Driving || viewType == CameraViewType.Presentation;
+        }
+
+        private CameraCommandResult BeginReset(bool isFullReset, bool isRecenter, out int commandId)
+        {
+            commandId = 0;
+            OrbitPose defaultPose = GetResetDefaultPose();
+            CameraCommandResult result;
+            if (isFullReset)
+            {
+                result = resetController.PlanFullReset(chainOrbit, activeOrbit, orbitMovement, defaultPose);
+            }
+            else
+            {
+                result = resetController.PlanOrbitReset(chainOrbit, activeOrbit, orbitMovement, defaultPose);
+            }
+
+            if (result != CameraCommandResult.Accepted)
+            {
+                return result;
+            }
+
+            if (isRecenter && resetController.IsPlannedAtDestination)
+            {
+                ReturnToDefault();
+                return CameraCommandResult.Accepted;
+            }
+
+            if (isFullReset)
+            {
+                viewSwitcher.ClearAdjustment(activeView.Id);
+            }
+
+            commandId = BeginCommand(CommandKind.Reset, false);
+            orbitMovement.StopManualTravel();
+            resetController.BeginPlannedTravel(new TransitionOptions(TransitionMode.PresetSpeed), activeView.Preset.Travel);
+            return CameraCommandResult.Accepted;
+        }
+
+        private OrbitPose GetResetDefaultPose()
+        {
+            if (activeView.Preset.ViewType != CameraViewType.Driving)
+            {
+                return MapToAllowedBearing(activeView.DefaultPose);
+            }
+
+            if (reverseController.IsReverseActive)
+            {
+                return GetFrontDefaultPose();
+            }
+
+            OrbitPose rearDefault;
+            if (!playerDefaults.TryGetDefault(rootProfile.ProfileId, activeView.Id, DefaultSlot.Rear, out rearDefault))
+            {
+                rearDefault = activeView.DefaultPose;
+            }
+
+            return MapToAllowedBearing(rearDefault);
+        }
+
+        private void ReturnToDefault()
+        {
+            turnLook.Resume();
+            recenter.ClearPending();
+        }
+
+        private CameraCommandResult GetSaveDefaultAvailability()
+        {
+            if (!isActive)
+            {
+                return CameraCommandResult.NotActive;
+            }
+
+            if (isTargetLost || !IsTargetAlive())
+            {
+                return CameraCommandResult.MissingTarget;
+            }
+
+            if (activeView.Preset.ViewType != CameraViewType.Driving)
+            {
+                return CameraCommandResult.NotSupportedInView;
+            }
+
+            if (chainOrbit == null)
+            {
+                return CameraCommandResult.ViewInvalid;
+            }
+
+            return CameraCommandResult.Accepted;
         }
 
         private bool AcceptPlayerInput()
@@ -778,6 +974,7 @@ namespace Gley.CameraSystem
             }
 
             reverseController.NotePlayerInput();
+            recenter.MarkPending();
             if (activeView != null && activeView.Preset.ViewType == CameraViewType.Driving)
             {
                 turnLook.Suspend();
@@ -788,7 +985,7 @@ namespace Gley.CameraSystem
 
         private bool CanApplyManualOrbitInput()
         {
-            return isActive && !isTargetLost && !isTransitioning && !viewSwitcher.IsSwitching && !pointOfInterestTravel.IsTravelling && !reverseController.IsTravelling && chainOrbit != null;
+            return isActive && !isTargetLost && !isTransitioning && !viewSwitcher.IsSwitching && !pointOfInterestTravel.IsTravelling && !reverseController.IsTravelling && !resetController.IsTravelling && chainOrbit != null;
         }
 
         private float GetFrameDeltaTime()
@@ -833,7 +1030,7 @@ namespace Gley.CameraSystem
             }
 
             rootMotionEstimator.UpdateMotionEstimate(scaledDeltaTime);
-            UpdateCommandsAndInput(deltaTime);
+            UpdateCommandsAndInput(deltaTime, scaledDeltaTime);
             WriteCameraPose(deltaTime);
         }
 
@@ -938,6 +1135,7 @@ namespace Gley.CameraSystem
             }
 
             orbitMovement.Configure(chainOrbit, activeOrbit, activeView.Preset.OrbitMovement, new LivePose(orbitDistance, orbitMovement.PlayerZoom, orbitMovement.HeightOffset));
+            recenter.MarkPending();
             ReplanRunningTravel();
         }
 
@@ -951,6 +1149,10 @@ namespace Gley.CameraSystem
             else if (reverseController.IsTravelling)
             {
                 result = reverseController.ReplanTravel(chainOrbit, activeOrbit, orbitMovement, GetFrontDefaultPose(), activeView.Preset.Travel);
+            }
+            else if (resetController.IsTravelling)
+            {
+                result = resetController.ReplanTravel(chainOrbit, activeOrbit, orbitMovement, activeView.Preset.Travel);
             }
 
             if (result == CameraCommandResult.Unreachable)
@@ -1094,6 +1296,8 @@ namespace Gley.CameraSystem
             pointOfInterestTravel.Clear();
             viewSwitcher.Clear();
             reverseController.Clear();
+            resetController.Clear();
+            recenter.Clear();
             turnLook.Clear();
             ResetFollowSmoothing();
             isTransitioning = false;
@@ -1123,8 +1327,9 @@ namespace Gley.CameraSystem
             }
         }
 
-        private void UpdateCommandsAndInput(float deltaTime)
+        private void UpdateCommandsAndInput(float deltaTime, float scaledDeltaTime)
         {
+            UpdateRecenter(scaledDeltaTime);
             if (isTransitioning || viewSwitcher.IsSwitching || chainOrbit == null)
             {
                 return;
@@ -1150,8 +1355,40 @@ namespace Gley.CameraSystem
                 return;
             }
 
+            if (resetController.IsTravelling)
+            {
+                if (resetController.UpdateResetTravel(deltaTime))
+                {
+                    EndRunningCommand(CommandEndResult.Completed);
+                    ReturnToDefault();
+                }
+
+                return;
+            }
+
             ApplyHeldInput();
             orbitMovement.UpdateOrbitMovement(deltaTime);
+        }
+
+        private void UpdateRecenter(float scaledDeltaTime)
+        {
+            bool canRecenter = IsRecenterView() && !commandArbiter.HasRunningCommand;
+            bool isHoldingInput = !commandArbiter.HeldInput.IsReceivedNeutral;
+            if (!recenter.UpdateRecenterCountdown(scaledDeltaTime,activeView.Preset.Recenter, rootMotionEstimator.Speed, canRecenter, isHoldingInput))
+            {
+                return;
+            }
+
+            int commandId;
+            if (BeginReset(false, true, out commandId) != CameraCommandResult.Accepted)
+            {
+                recenter.ClearPending();
+            }
+        }
+
+        private bool IsRecenterView()
+        {
+            return activeView.Preset.ViewType == CameraViewType.Driving && chainOrbit != null;
         }
 
         private void WriteCameraPose(float deltaTime)
@@ -1431,6 +1668,7 @@ namespace Gley.CameraSystem
             ResetFollowSmoothing();
             turnLook.Reset();
             reverseController.ForgetRememberedPose();
+            recenter.MarkPending();
             orbitFrame = null;
             orbitMovement.Clear();
             pointOfInterestTravel.Configure(chainOrbit, rootBody, orbitMovement);
