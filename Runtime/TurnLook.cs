@@ -22,13 +22,18 @@ namespace Gley.CameraSystem
                 targetOffset = -Signal(yawRate, hasHint, hint, settings.TurnLookFullTurnRate, settings.TurnLookHintWeight) * settings.TurnLookMaximumOffset;
             }
 
-            offset = smoother.Smooth(offset, targetOffset, deltaTime, settings.TurnLookHalfLife);
-            if (targetOffset == 0f && Mathf.Abs(offset) < RestThreshold)
+            return SmoothOffset(targetOffset, deltaTime, settings.TurnLookHalfLife);
+        }
+
+        public float UpdateInteriorTurnLook(float deltaTime, float yawRate, bool hasHint, float hint, InteriorSettings settings, bool isReverseActive)
+        {
+            float targetOffset = 0f;
+            if (settings.TurnLookEnabled && !isSuspended && !isReverseActive)
             {
-                offset = 0f;
+                targetOffset = Signal(yawRate, hasHint, hint, settings.TurnLookFullTurnRate, settings.TurnLookHintWeight) * settings.TurnLookMaximumOffset;
             }
 
-            return offset;
+            return SmoothOffset(targetOffset, deltaTime, settings.TurnLookHalfLife);
         }
 
         public float Signal(float yawRate, bool hasHint, float hint, float fullTurnRate, float hintWeight)
@@ -66,6 +71,17 @@ namespace Gley.CameraSystem
         {
             offset = 0f;
             isSuspended = false;
+        }
+
+        private float SmoothOffset(float targetOffset, float deltaTime, float halfLife)
+        {
+            offset = smoother.Smooth(offset, targetOffset, deltaTime, halfLife);
+            if (targetOffset == 0f && Mathf.Abs(offset) < RestThreshold)
+            {
+                offset = 0f;
+            }
+
+            return offset;
         }
     }
 }

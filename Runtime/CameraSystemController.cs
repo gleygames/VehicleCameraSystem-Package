@@ -35,6 +35,7 @@ namespace Gley.CameraSystem
         private readonly ResetController resetController = new ResetController();
         private readonly Recenter recenter = new Recenter();
         private readonly CameraPlayerPreferences playerPreferences = new CameraPlayerPreferences();
+        private readonly InteriorView interiorView = new InteriorView();
 
         [SerializeField] private Camera assignedCamera;
         [SerializeField] private VehicleCameraTarget target;
@@ -102,6 +103,8 @@ namespace Gley.CameraSystem
         public float OrbitDistance => orbitMovement.OrbitDistance;
         public float ZoomOffset => orbitMovement.PlayerZoom;
         public float TurnLookOffset => turnLook.Offset;
+        public float HeadYaw => interiorView.Yaw;
+        public float HeadPitch => interiorView.Pitch;
         public float CushionIntensity => playerPreferences.CushionIntensity;
         public float OrbitSensitivity => playerPreferences.OrbitSensitivity;
         public float LookSensitivity => playerPreferences.LookSensitivity;
@@ -615,6 +618,7 @@ namespace Gley.CameraSystem
 
             playerPreferences.CopyGlobalSettings(preferences);
             orbitMovement.SetSensitivity(playerPreferences.OrbitSensitivity);
+            interiorView.SetSensitivity(playerPreferences.LookSensitivity);
             playerDefaults.Clear();
             IReadOnlyList<ViewPreferenceEntry> entries = preferences.ViewEntries;
             if (entries == null)
@@ -659,6 +663,7 @@ namespace Gley.CameraSystem
         {
             playerPreferences.SetSensitivity(orbit, look);
             orbitMovement.SetSensitivity(playerPreferences.OrbitSensitivity);
+            interiorView.SetSensitivity(playerPreferences.LookSensitivity);
         }
 
         public CameraCommandResult SetHeldIntent(float horizontal, float vertical, float zoom)
@@ -678,7 +683,7 @@ namespace Gley.CameraSystem
                     result = CameraCommandResult.PlayerControlLocked;
                 }
             }
-            else if (!heldInput.IsNeutral)
+            else if (!IsHeldInputNeutral(heldInput))
             {
                 AcceptPlayerInput();
             }
@@ -723,7 +728,14 @@ namespace Gley.CameraSystem
                 return CameraCommandResult.PlayerControlLocked;
             }
 
-            if (CanApplyManualOrbitInput())
+            if (IsInteriorView())
+            {
+                if (CanApplyInteriorInput())
+                {
+                    interiorView.AddDrag(normalizedDelta);
+                }
+            }
+            else if (CanApplyManualOrbitInput())
             {
                 orbitMovement.AddDrag(normalizedDelta);
             }
@@ -740,6 +752,16 @@ namespace Gley.CameraSystem
 
             if (normalizedSpan == 0f)
             {
+                return CameraCommandResult.Accepted;
+            }
+
+            if (IsInteriorView())
+            {
+                if (commandArbiter.IsPlayerControlLocked)
+                {
+                    return CameraCommandResult.PlayerControlLocked;
+                }
+
                 return CameraCommandResult.Accepted;
             }
 
@@ -778,6 +800,26 @@ namespace Gley.CameraSystem
         private bool IsBlockedByPlayerLock(CommandSource source)
         {
             return source == CommandSource.Player && commandArbiter.IsPlayerControlLocked;
+        }
+
+        private bool IsHeldInputNeutral(HeldInputGate heldInput)
+        {
+            if (IsInteriorView())
+            {
+                return heldInput.IsHorizontalAndVerticalNeutral;
+            }
+
+            return heldInput.IsNeutral;
+        }
+
+        private bool IsInteriorView()
+        {
+            return activeView != null && activeView.Preset.ViewType == CameraViewType.Interior;
+        }
+
+        private bool CanApplyInteriorInput()
+        {
+            return isActive && !isTargetLost && !isTransitioning && !viewSwitcher.IsSwitching && !resetController.IsTravelling;
         }
 
         private int BeginViewSwitch(VehicleViewEntry view, VehicleOrbit orbit, ChainOrbit builtOrbit, TransitionOptions options)
@@ -988,13 +1030,14 @@ namespace Gley.CameraSystem
         {
             HeldInputGate heldInput = commandArbiter.HeldInput;
             orbitMovement.SetHeldIntent(heldInput.Horizontal, heldInput.Vertical, heldInput.Zoom);
+            interiorView.SetHeldIntent(heldInput.Horizontal, heldInput.Vertical);
         }
 
         private CameraCommandResult RequestReset(bool isFullReset, CommandSource source, out int commandId)
         {
             commandId = 0;
             CameraCommandResult result = GetResetAvailability(source);
-            if (result == CameraCommandResult.Accepted && IsOrbitResetView())
+            if (result == CameraCommandResult.Accepted && (IsOrbitResetView() || IsInteriorView()))
             {
                 result = BeginReset(isFullReset, false, out commandId);
             }
@@ -1047,15 +1090,19 @@ namespace Gley.CameraSystem
         private CameraCommandResult BeginReset(bool isFullReset, bool isRecenter, out int commandId)
         {
             commandId = 0;
-            OrbitPose defaultPose = GetResetDefaultPose();
+            bool isInterior = IsInteriorView();
             CameraCommandResult result;
-            if (isFullReset)
+            if (isInterior)
             {
-                result = resetController.PlanFullReset(chainOrbit, activeOrbit, orbitMovement, defaultPose);
+                result = resetController.PlanHeadReset(interiorView);
+            }
+            else if (isFullReset)
+            {
+                result = resetController.PlanFullReset(chainOrbit, activeOrbit, orbitMovement, GetResetDefaultPose());
             }
             else
             {
-                result = resetController.PlanOrbitReset(chainOrbit, activeOrbit, orbitMovement, defaultPose);
+                result = resetController.PlanOrbitReset(chainOrbit, activeOrbit, orbitMovement, GetResetDefaultPose());
             }
 
             if (result != CameraCommandResult.Accepted)
@@ -1069,12 +1116,18 @@ namespace Gley.CameraSystem
                 return CameraCommandResult.Accepted;
             }
 
+            commandId = BeginCommand(CommandKind.Reset, false);
+            if (isInterior)
+            {
+                resetController.BeginPlannedHeadReturn(activeView.Preset.Recenter.ReturnHalfLife);
+                return CameraCommandResult.Accepted;
+            }
+
             if (isFullReset)
             {
                 viewSwitcher.ClearAdjustment(activeView.Id);
             }
 
-            commandId = BeginCommand(CommandKind.Reset, false);
             orbitMovement.StopManualTravel();
             resetController.BeginPlannedTravel(new TransitionOptions(TransitionMode.PresetSpeed), activeView.Preset.Travel);
             return CameraCommandResult.Accepted;
@@ -1151,7 +1204,7 @@ namespace Gley.CameraSystem
 
             reverseController.NotePlayerInput();
             recenter.MarkPending();
-            if (activeView != null && activeView.Preset.ViewType == CameraViewType.Driving)
+            if (activeView != null && (activeView.Preset.ViewType == CameraViewType.Driving || activeView.Preset.ViewType == CameraViewType.Interior))
             {
                 turnLook.Suspend();
             }
@@ -1472,6 +1525,7 @@ namespace Gley.CameraSystem
             chainBodies.Clear();
             orbitMovement.Clear();
             orbitMovement.ClearHeldIntent();
+            interiorView.Clear();
             pointOfInterestTravel.Clear();
             viewSwitcher.Clear();
             reverseController.Clear();
@@ -1509,7 +1563,18 @@ namespace Gley.CameraSystem
         private void UpdateCommandsAndInput(float deltaTime, float scaledDeltaTime)
         {
             UpdateRecenter(scaledDeltaTime);
-            if (isTransitioning || viewSwitcher.IsSwitching || chainOrbit == null)
+            if (isTransitioning || viewSwitcher.IsSwitching)
+            {
+                return;
+            }
+
+            if (IsInteriorView())
+            {
+                UpdateInteriorHeadLook(deltaTime);
+                return;
+            }
+
+            if (chainOrbit == null)
             {
                 return;
             }
@@ -1552,7 +1617,13 @@ namespace Gley.CameraSystem
         private void UpdateRecenter(float scaledDeltaTime)
         {
             bool canRecenter = IsRecenterView() && !commandArbiter.HasRunningCommand;
-            bool isHoldingInput = !commandArbiter.HeldInput.IsReceivedNeutral;
+            HeldInputGate heldInput = commandArbiter.HeldInput;
+            bool isHoldingInput = !heldInput.IsReceivedNeutral;
+            if (IsInteriorView())
+            {
+                isHoldingInput = !heldInput.IsReceivedHorizontalAndVerticalNeutral;
+            }
+
             RecenterSettings presetRecenter = activeView.Preset.Recenter;
             RecenterMode mode = playerPreferences.GetRecenterMode(presetRecenter);
             float delay = playerPreferences.GetRecenterDelay(presetRecenter);
@@ -1568,8 +1639,30 @@ namespace Gley.CameraSystem
             }
         }
 
+        private void UpdateInteriorHeadLook(float deltaTime)
+        {
+            if (resetController.IsTravelling)
+            {
+                if (resetController.UpdateResetTravel(deltaTime))
+                {
+                    EndRunningCommand(CommandEndResult.Completed);
+                    ReturnToDefault();
+                }
+
+                return;
+            }
+
+            ApplyHeldInput();
+            interiorView.UpdateInteriorHeadLook(deltaTime);
+        }
+
         private bool IsRecenterView()
         {
+            if (IsInteriorView())
+            {
+                return true;
+            }
+
             return activeView.Preset.ViewType == CameraViewType.Driving && chainOrbit != null;
         }
 
@@ -1633,7 +1726,8 @@ namespace Gley.CameraSystem
 
             if (viewType == CameraViewType.Interior)
             {
-                return rootBody.TransformPoint(rootProfile.Seat.EyeLocalPosition);
+                turnLook.UpdateInteriorTurnLook(deltaTime, rootMotionEstimator.YawRate, target.HasTurnHint, target.TurnHint, activeView.Preset.Interior, reverseController.IsReverseActive);
+                return interiorView.ComputeEyePosition(rootBody, rootProfile.Seat);
             }
 
             float orbitDistance = ApplyTurnLook(orbitMovement.OrbitDistance, deltaTime);
@@ -1693,12 +1787,12 @@ namespace Gley.CameraSystem
         private Quaternion ComputeAim(Vector3 cameraPosition)
         {
             CameraViewType viewType = activeView.Preset.ViewType;
+            float imageRollFollow = activeView.Preset.OrbitMovement.ImageRollFollow;
             if (viewType == CameraViewType.Interior)
             {
-                return rootBody.rotation;
+                return interiorView.ComputeRotation(rootBody.rotation, turnLook.Offset, imageRollFollow);
             }
 
-            float imageRollFollow = activeView.Preset.OrbitMovement.ImageRollFollow;
             Quaternion fallbackRotation = assignedCamera.transform.rotation;
             if (viewType == CameraViewType.Fixed)
             {
@@ -1853,6 +1947,7 @@ namespace Gley.CameraSystem
             recenter.MarkPending();
             orbitFrame = null;
             orbitMovement.Clear();
+            interiorView.Configure(view.Preset.Interior);
             pointOfInterestTravel.Configure(chainOrbit, rootBody, orbitMovement);
             if (chainOrbit == null)
             {

@@ -24,6 +24,8 @@ namespace Gley.CameraSystem
         public float ReceivedZoom => receivedZoom;
         public bool IsNeutral => IsNeutralValue(horizontal) && IsNeutralValue(vertical) && IsNeutralValue(zoom);
         public bool IsReceivedNeutral => IsNeutralValue(receivedHorizontal) && IsNeutralValue(receivedVertical) && IsNeutralValue(receivedZoom);
+        public bool IsHorizontalAndVerticalNeutral => IsNeutralValue(horizontal) && IsNeutralValue(vertical);
+        public bool IsReceivedHorizontalAndVerticalNeutral => IsNeutralValue(receivedHorizontal) && IsNeutralValue(receivedVertical);
 
         public void ReceiveHeldInput(float horizontalValue, float verticalValue, float zoomValue)
         {
