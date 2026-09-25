@@ -34,6 +34,7 @@ namespace Gley.CameraSystem
         private readonly PlayerDefaults playerDefaults = new PlayerDefaults();
         private readonly ResetController resetController = new ResetController();
         private readonly Recenter recenter = new Recenter();
+        private readonly CameraPlayerPreferences playerPreferences = new CameraPlayerPreferences();
 
         [SerializeField] private Camera assignedCamera;
         [SerializeField] private VehicleCameraTarget target;
@@ -101,6 +102,9 @@ namespace Gley.CameraSystem
         public float OrbitDistance => orbitMovement.OrbitDistance;
         public float ZoomOffset => orbitMovement.PlayerZoom;
         public float TurnLookOffset => turnLook.Offset;
+        public float CushionIntensity => playerPreferences.CushionIntensity;
+        public float OrbitSensitivity => playerPreferences.OrbitSensitivity;
+        public float LookSensitivity => playerPreferences.LookSensitivity;
         public bool IsActive => isActive;
         public bool IsTargetLost => isTargetLost;
         public bool IsPlayerControlLocked => commandArbiter.IsPlayerControlLocked;
@@ -543,6 +547,81 @@ namespace Gley.CameraSystem
 
             playerDefaults.SaveCurrentPoseAsDefault(rootProfile.ProfileId, activeView.Id, slot, chainOrbit, orbitMovement.Pose);
             return CameraCommandResult.Accepted;
+        }
+
+        public CameraPlayerPreferences GetPlayerPreferences()
+        {
+            CameraPlayerPreferences preferences = new CameraPlayerPreferences();
+            preferences.CopyGlobalSettings(playerPreferences);
+            for (int index = 0; index < playerDefaults.EntryCount; index++)
+            {
+                PlayerDefaultEntry entry = playerDefaults.GetEntry(index);
+                preferences.AddViewEntry(new ViewPreferenceEntry(entry.ProfileId, entry.ViewId, entry.HasRearDefault, entry.RearDefault, entry.HasFrontDefault, entry.FrontDefault));
+            }
+
+            return preferences;
+        }
+
+        public void ApplyPlayerPreferences(CameraPlayerPreferences preferences)
+        {
+            if (preferences == null)
+            {
+                ReportRejection($"{name}: ApplyPlayerPreferences ignored: the preferences are null.");
+                return;
+            }
+
+            if (preferences.FormatVersion > CameraPlayerPreferences.CurrentFormatVersion)
+            {
+                CustomLogger.LogWarning($"{name}: ApplyPlayerPreferences rejected: format version {preferences.FormatVersion} is newer than the supported version {CameraPlayerPreferences.CurrentFormatVersion}. Nothing was applied.", this);
+                return;
+            }
+
+            playerPreferences.CopyGlobalSettings(preferences);
+            orbitMovement.SetSensitivity(playerPreferences.OrbitSensitivity);
+            playerDefaults.Clear();
+            IReadOnlyList<ViewPreferenceEntry> entries = preferences.ViewEntries;
+            if (entries == null)
+            {
+                return;
+            }
+
+            for (int index = 0; index < entries.Count; index++)
+            {
+                ViewPreferenceEntry entry = entries[index];
+                if (string.IsNullOrEmpty(entry.ProfileId) || (!entry.HasRearDefault && !entry.HasFrontDefault))
+                {
+                    continue;
+                }
+
+                playerDefaults.SetEntry(new PlayerDefaultEntry(entry.ProfileId, entry.ViewId, entry.HasRearDefault, entry.RearDefault, entry.HasFrontDefault, entry.FrontDefault));
+            }
+        }
+
+        public void SetRecenterOverride(RecenterMode mode, float delay)
+        {
+            RecenterModeOverride modeOverride = RecenterModeOverride.Timed;
+            if (mode == RecenterMode.Persistent)
+            {
+                modeOverride = RecenterModeOverride.Persistent;
+            }
+
+            playerPreferences.SetRecenterOverride(modeOverride, delay);
+        }
+
+        public void ClearRecenterOverride()
+        {
+            playerPreferences.ClearRecenterOverride();
+        }
+
+        public void SetCushionIntensity(float value)
+        {
+            playerPreferences.SetCushionIntensity(value);
+        }
+
+        public void SetSensitivity(float orbit, float look)
+        {
+            playerPreferences.SetSensitivity(orbit, look);
+            orbitMovement.SetSensitivity(playerPreferences.OrbitSensitivity);
         }
 
         public CameraCommandResult SetHeldIntent(float horizontal, float vertical, float zoom)
@@ -1374,7 +1453,10 @@ namespace Gley.CameraSystem
         {
             bool canRecenter = IsRecenterView() && !commandArbiter.HasRunningCommand;
             bool isHoldingInput = !commandArbiter.HeldInput.IsReceivedNeutral;
-            if (!recenter.UpdateRecenterCountdown(scaledDeltaTime,activeView.Preset.Recenter, rootMotionEstimator.Speed, canRecenter, isHoldingInput))
+            RecenterSettings presetRecenter = activeView.Preset.Recenter;
+            RecenterMode mode = playerPreferences.GetRecenterMode(presetRecenter);
+            float delay = playerPreferences.GetRecenterDelay(presetRecenter);
+            if (!recenter.UpdateRecenterCountdown(scaledDeltaTime, mode, delay, presetRecenter.StationaryThreshold, rootMotionEstimator.Speed, canRecenter, isHoldingInput))
             {
                 return;
             }

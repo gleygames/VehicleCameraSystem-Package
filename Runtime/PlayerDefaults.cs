@@ -8,6 +8,8 @@ namespace Gley.CameraSystem
 
         private readonly List<PlayerDefaultEntry> entries = new List<PlayerDefaultEntry>(InitialEntryCapacity);
 
+        public int EntryCount => entries.Count;
+
         public void SaveCurrentPoseAsDefault(string profileId, int viewId, DefaultSlot slot, ChainOrbit orbit, LivePose pose)
         {
             float bearing = orbit.Bearing.BearingOfLocalPoint(orbit.EvaluateRootLocalPosition(pose.OrbitDistance));
@@ -41,7 +43,12 @@ namespace Gley.CameraSystem
                 rearDefault = pose;
             }
 
-            PlayerDefaultEntry entry = new PlayerDefaultEntry(profileId, viewId, hasRearDefault, rearDefault, hasFrontDefault, frontDefault);
+            SetEntry(new PlayerDefaultEntry(profileId, viewId, hasRearDefault, rearDefault, hasFrontDefault, frontDefault));
+        }
+
+        public void SetEntry(PlayerDefaultEntry entry)
+        {
+            int index = FindEntry(entry.ProfileId, entry.ViewId);
             if (index >= 0)
             {
                 entries[index] = entry;
@@ -50,6 +57,11 @@ namespace Gley.CameraSystem
             {
                 entries.Add(entry);
             }
+        }
+
+        public PlayerDefaultEntry GetEntry(int index)
+        {
+            return entries[index];
         }
 
         public bool TryGetDefault(string profileId, int viewId, DefaultSlot slot, out OrbitPose pose)

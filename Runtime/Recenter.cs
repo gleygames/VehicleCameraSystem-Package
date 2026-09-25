@@ -13,11 +13,11 @@ namespace Gley.CameraSystem
         public bool IsPending => isPending;
         public bool IsCountingDown => isCountingDown;
 
-        public bool UpdateRecenterCountdown(float scaledDeltaTime, RecenterSettings settings, float speed, bool canRecenter, bool isHoldingInput)
+        public bool UpdateRecenterCountdown(float scaledDeltaTime, RecenterMode mode, float delay, float stationaryThreshold, float speed, bool canRecenter, bool isHoldingInput)
         {
             bool isReceivingInput = isHoldingInput || hasGestureInput;
             hasGestureInput = false;
-            if (!isPending || !canRecenter || isReceivingInput || settings.Mode != RecenterMode.Timed || speed <= settings.StationaryThreshold)
+            if (!isPending || !canRecenter || isReceivingInput || mode != RecenterMode.Timed || speed <= stationaryThreshold)
             {
                 isCountingDown = false;
                 return false;
@@ -25,7 +25,7 @@ namespace Gley.CameraSystem
 
             if (!isCountingDown)
             {
-                remainingTime = Mathf.Max(0f, settings.Delay);
+                remainingTime = Mathf.Max(0f, delay);
                 isCountingDown = true;
             }
 

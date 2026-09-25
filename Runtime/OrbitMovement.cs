@@ -19,6 +19,7 @@ namespace Gley.CameraSystem
         private float playerZoom;
         private float heightOffset;
         private float travelSpeed;
+        private float sensitivity = 1f;
         private float windingSign = 1f;
         private float limitStartDistance;
         private float limitArcLength;
@@ -32,6 +33,7 @@ namespace Gley.CameraSystem
         public float PlayerZoom => playerZoom;
         public float HeightOffset => heightOffset;
         public float TravelSpeed => travelSpeed;
+        public float Sensitivity => sensitivity;
         public float IncreasingBearingSign => windingSign;
         public float LimitArcLength => limitArcLength;
         public bool HasAngleLimits => hasAngleLimits;
@@ -69,8 +71,8 @@ namespace Gley.CameraSystem
                 travelSpeed = 0f;
             }
 
-            heightOffset = ClampHeight(heightOffset + verticalIntent * settings.HeightRate * deltaTime);
-            playerZoom = ClampZoom(playerZoom + zoomIntent * settings.ZoomRate * deltaTime);
+            heightOffset = ClampHeight(heightOffset + verticalIntent * settings.HeightRate * sensitivity * deltaTime);
+            playerZoom = ClampZoom(playerZoom + zoomIntent * settings.ZoomRate * sensitivity * deltaTime);
         }
 
         public void SetHeldIntent(float horizontal, float vertical, float zoom)
@@ -91,8 +93,8 @@ namespace Gley.CameraSystem
                 return;
             }
 
-            MoveAlongOrbit(normalizedDelta.x * settings.DragOrbit);
-            heightOffset = ClampHeight(heightOffset + normalizedDelta.y * settings.DragHeight);
+            MoveAlongOrbit(normalizedDelta.x * settings.DragOrbit * sensitivity);
+            heightOffset = ClampHeight(heightOffset + normalizedDelta.y * settings.DragHeight * sensitivity);
         }
 
         public void AddPinch(float normalizedSpan)
@@ -102,7 +104,12 @@ namespace Gley.CameraSystem
                 return;
             }
 
-            playerZoom = ClampZoom(playerZoom + normalizedSpan * settings.Pinch);
+            playerZoom = ClampZoom(playerZoom + normalizedSpan * settings.Pinch * sensitivity);
+        }
+
+        public void SetSensitivity(float multiplier)
+        {
+            sensitivity = multiplier;
         }
 
         public void SetOrbitDistance(float distance)
@@ -241,7 +248,7 @@ namespace Gley.CameraSystem
 
         private void UpdateTravelSpeed(float deltaTime)
         {
-            float targetSpeed = horizontalIntent * settings.ManualTravelSpeed;
+            float targetSpeed = horizontalIntent * settings.ManualTravelSpeed * sensitivity;
             if (travelSpeed * targetSpeed <= 0f)
             {
                 travelSpeed = 0f;
