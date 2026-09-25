@@ -91,7 +91,12 @@ namespace Gley.CameraSystem
 
         public Vector3 ComputeEyePosition(Transform rootBody, SeatSettings seat)
         {
-            return rootBody.TransformPoint(seat.EyeLocalPosition);
+            return ComputeEyePosition(rootBody, seat, Vector3.zero);
+        }
+
+        public Vector3 ComputeEyePosition(Transform rootBody, SeatSettings seat, Vector3 seatOffset)
+        {
+            return rootBody.TransformPoint(seat.EyeLocalPosition + seatOffset);
         }
 
         public Quaternion ComputeRotation(Quaternion rootRotation, float turnLookOffset, float imageRollFollow)

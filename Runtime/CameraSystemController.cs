@@ -36,6 +36,7 @@ namespace Gley.CameraSystem
         private readonly Recenter recenter = new Recenter();
         private readonly CameraPlayerPreferences playerPreferences = new CameraPlayerPreferences();
         private readonly InteriorView interiorView = new InteriorView();
+        private readonly SeatMotion seatMotion = new SeatMotion();
 
         [SerializeField] private Camera assignedCamera;
         [SerializeField] private VehicleCameraTarget target;
@@ -52,6 +53,7 @@ namespace Gley.CameraSystem
         private AimFrame aimFrame;
         private Vector3 lastRootPosition;
         private Quaternion lastRootRotation = Quaternion.identity;
+        private Vector3 seatOffset;
         [SerializeField] private string initialViewName;
         [SerializeField, Min(0f)] private float maximumFrameDeltaTime = 0.1f;
         private float destinationBearing;
@@ -403,6 +405,7 @@ namespace Gley.CameraSystem
 
             drivingFollow.ShiftOrigin(offset);
             rootMotionEstimator.ShiftOrigin(offset);
+            seatMotion.ShiftOrigin(offset);
             activationTransition.ShiftOrigin(offset);
             lastRootPosition += offset;
             if (isTargetLost && assignedCamera != null)
@@ -1259,6 +1262,11 @@ namespace Gley.CameraSystem
             }
 
             rootMotionEstimator.UpdateMotionEstimate(scaledDeltaTime);
+            if (IsInteriorView())
+            {
+                seatOffset = seatMotion.UpdateSeatMotion(scaledDeltaTime);
+            }
+
             UpdateCommandsAndInput(deltaTime, scaledDeltaTime);
             WriteCameraPose(deltaTime);
         }
@@ -1329,6 +1337,11 @@ namespace Gley.CameraSystem
             if (previousRoot != rootBody)
             {
                 rootMotionEstimator.Configure(target, Vector3.zero);
+                if (IsInteriorView())
+                {
+                    seatMotion.Configure(target, rootProfile.Seat, activeView.Preset.Interior);
+                    seatOffset = Vector3.zero;
+                }
             }
 
             if (activeOrbit == null)
@@ -1496,6 +1509,8 @@ namespace Gley.CameraSystem
 
             ResetFollowSmoothing();
             rootMotionEstimator.Reset();
+            seatMotion.Reset();
+            seatOffset = Vector3.zero;
             WriteCameraPose(0f);
         }
 
@@ -1526,6 +1541,8 @@ namespace Gley.CameraSystem
             orbitMovement.Clear();
             orbitMovement.ClearHeldIntent();
             interiorView.Clear();
+            seatMotion.Clear();
+            seatOffset = Vector3.zero;
             pointOfInterestTravel.Clear();
             viewSwitcher.Clear();
             reverseController.Clear();
@@ -1727,7 +1744,7 @@ namespace Gley.CameraSystem
             if (viewType == CameraViewType.Interior)
             {
                 turnLook.UpdateInteriorTurnLook(deltaTime, rootMotionEstimator.YawRate, target.HasTurnHint, target.TurnHint, activeView.Preset.Interior, reverseController.IsReverseActive);
-                return interiorView.ComputeEyePosition(rootBody, rootProfile.Seat);
+                return interiorView.ComputeEyePosition(rootBody, rootProfile.Seat, seatOffset);
             }
 
             float orbitDistance = ApplyTurnLook(orbitMovement.OrbitDistance, deltaTime);
@@ -1948,6 +1965,13 @@ namespace Gley.CameraSystem
             orbitFrame = null;
             orbitMovement.Clear();
             interiorView.Configure(view.Preset.Interior);
+            seatMotion.Clear();
+            seatOffset = Vector3.zero;
+            if (view.Preset.ViewType == CameraViewType.Interior)
+            {
+                seatMotion.Configure(target, rootProfile.Seat, view.Preset.Interior);
+            }
+
             pointOfInterestTravel.Configure(chainOrbit, rootBody, orbitMovement);
             if (chainOrbit == null)
             {
