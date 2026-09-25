@@ -6,6 +6,7 @@ namespace Gley.CameraSystem
     public class PointOfInterestTravel
     {
         private const float ArrivalTolerance = 0.0001f;
+        private const float RouteContinuityTolerance = 0.01f;
         private const int InitialPointCapacity = 16;
 
         private readonly List<int> orderedPoints = new List<int>(InitialPointCapacity);
@@ -17,6 +18,9 @@ namespace Gley.CameraSystem
         private Transform plannedOwner;
         private Transform destinationOwner;
         private Transform reachedOwner;
+        private TransitionOptions travelSpeed;
+        private TravelDirection plannedDirection;
+        private TravelDirection travelDirection;
         private float plannedStartDistance;
         private float plannedDestinationDistance;
         private float plannedRouteLength;
@@ -101,6 +105,8 @@ namespace Gley.CameraSystem
 
         public void BeginPlannedTravel(TransitionOptions speed, TravelSettings settings)
         {
+            travelSpeed = speed;
+            travelDirection = plannedDirection;
             destinationOwner = plannedOwner;
             destinationMarkerId = plannedMarkerId;
             destinationDistance = plannedDestinationDistance;
@@ -127,6 +133,50 @@ namespace Gley.CameraSystem
             }
 
             isTravelling = true;
+        }
+
+        public CameraCommandResult ReplanTravel(TravelSettings settings)
+        {
+            if (!isTravelling)
+            {
+                return CameraCommandResult.Accepted;
+            }
+
+            int markerIndex = -1;
+            if (IsOrbitReady())
+            {
+                markerIndex = FindMarker(destinationOwner, destinationMarkerId);
+            }
+
+            CameraCommandResult result = CameraCommandResult.PointNotFound;
+            if (markerIndex >= 0)
+            {
+                result = PlanRoute(markerIndex, travelDirection);
+            }
+
+            if (result != CameraCommandResult.Accepted)
+            {
+                isTravelling = false;
+                return result;
+            }
+
+            float travelled = travelProfile.DistanceTravelled;
+            float remaining = travelProfile.RouteLength - travelled;
+            if (plannedRouteSign == routeSign && Mathf.Abs(plannedRouteLength - remaining) <= RouteContinuityTolerance)
+            {
+                destinationDistance = plannedDestinationDistance;
+                startDistance = plannedStartDistance - routeSign * travelled;
+                return CameraCommandResult.Accepted;
+            }
+
+            TransitionOptions remainingSpeed = travelSpeed;
+            if (travelSpeed.Mode == TransitionMode.Duration)
+            {
+                remainingSpeed = new TransitionOptions(TransitionMode.Duration, Mathf.Max(0f, travelSpeed.Value - travelProfile.ElapsedTime), travelSpeed.LockPlayerControl);
+            }
+
+            BeginPlannedTravel(remainingSpeed, settings);
+            return CameraCommandResult.Accepted;
         }
 
         public void Stop()
@@ -291,6 +341,7 @@ namespace Gley.CameraSystem
 
             plannedOwner = marker.OwnerBody;
             plannedMarkerId = marker.MarkerId;
+            plannedDirection = direction;
             plannedStartDistance = current;
             plannedDestinationDistance = destination;
             plannedRouteLength = routeLength;

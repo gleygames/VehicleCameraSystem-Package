@@ -21,6 +21,7 @@ namespace Gley.CameraSystem
         private readonly PointOfInterestTravel pointOfInterestTravel = new PointOfInterestTravel();
         private readonly DistanceComposer distanceComposer = new DistanceComposer();
         private readonly OrbitAim orbitAim = new OrbitAim();
+        private readonly CommandArbiter commandArbiter = new CommandArbiter();
 
         [SerializeField] private Camera assignedCamera;
         [SerializeField] private VehicleCameraTarget target;
@@ -34,16 +35,28 @@ namespace Gley.CameraSystem
         private OrbitFrame orbitFrame;
         private Transform rootBody;
         private AimFrame aimFrame;
+        private Vector3 lastRootPosition;
+        private Quaternion lastRootRotation = Quaternion.identity;
         [SerializeField] private string initialViewName;
         [SerializeField, Min(0f)] private float maximumFrameDeltaTime = 0.1f;
-        private int nextCommandId = 1;
-        private int runningCommandId;
+        private float destinationBearing;
         private int builtChainVersion;
         private bool isActive;
         private bool isTargetLost;
         private bool isTransitioning;
+        private bool hasBearingDestination;
 
-        public event Action<int, CommandEndResult> CommandEnded;
+        public event Action<int, CommandEndResult> CommandEnded
+        {
+            add
+            {
+                commandArbiter.CommandEnded += value;
+            }
+            remove
+            {
+                commandArbiter.CommandEnded -= value;
+            }
+        }
         public event Action<int> ViewChanged;
         public event Action TargetLost;
         public event Action CameraLost;
@@ -75,6 +88,7 @@ namespace Gley.CameraSystem
         public float ZoomOffset => orbitMovement.PlayerZoom;
         public bool IsActive => isActive;
         public bool IsTargetLost => isTargetLost;
+        public bool IsPlayerControlLocked => commandArbiter.IsPlayerControlLocked;
 
         private void LateUpdate()
         {
@@ -191,6 +205,7 @@ namespace Gley.CameraSystem
                 renderingState.RecordBaseline(assignedCamera);
             }
 
+            EndRunningCommand(CommandEndResult.Replaced);
             AcquireOwnership();
             SubscribeToTarget();
             isActive = true;
@@ -219,8 +234,10 @@ namespace Gley.CameraSystem
                     activationTransition.Begin(startPosition, startRotation, destinationPosition, speed, easeTime);
                 }
 
-                commandId = BeginCommand();
+                commandId = BeginCommand(CommandKind.Activation, options.LockPlayerControl);
                 isTransitioning = true;
+                hasBearingDestination = chainOrbit != null;
+                destinationBearing = view.DefaultPose.Bearing;
             }
 
             WriteCameraPose(0f);
@@ -240,6 +257,11 @@ namespace Gley.CameraSystem
 
         public CameraCommandResult SelectView(string viewName)
         {
+            return SelectView(viewName, CommandSource.Game);
+        }
+
+        public CameraCommandResult SelectView(string viewName, CommandSource source)
+        {
             if (!isActive)
             {
                 ReportRejection($"{name}: SelectView '{viewName}' rejected: {CameraCommandResult.NotActive}.");
@@ -250,6 +272,12 @@ namespace Gley.CameraSystem
             {
                 ReportRejection($"{name}: SelectView '{viewName}' rejected: {CameraCommandResult.MissingTarget}.");
                 return CameraCommandResult.MissingTarget;
+            }
+
+            if (IsBlockedByPlayerLock(source))
+            {
+                ReportRejection($"{name}: SelectView '{viewName}' rejected: {CameraCommandResult.PlayerControlLocked}.");
+                return CameraCommandResult.PlayerControlLocked;
             }
 
             VehicleViewEntry view;
@@ -318,8 +346,13 @@ namespace Gley.CameraSystem
 
         public CameraCommandResult RequestPoint(string pointName, TravelRequest request, out int commandId)
         {
+            return RequestPoint(pointName, request, CommandSource.Game, out commandId);
+        }
+
+        public CameraCommandResult RequestPoint(string pointName, TravelRequest request, CommandSource source, out int commandId)
+        {
             commandId = 0;
-            CameraCommandResult result = GetPointTravelAvailability();
+            CameraCommandResult result = GetPointTravelAvailability(source);
             if (result == CameraCommandResult.Accepted)
             {
                 result = pointOfInterestTravel.PlanPoint(pointName, request.Direction);
@@ -343,8 +376,13 @@ namespace Gley.CameraSystem
 
         public CameraCommandResult RequestNextPoint(bool wrap, TravelRequest request, out int commandId)
         {
+            return RequestNextPoint(wrap, request, CommandSource.Game, out commandId);
+        }
+
+        public CameraCommandResult RequestNextPoint(bool wrap, TravelRequest request, CommandSource source, out int commandId)
+        {
             commandId = 0;
-            CameraCommandResult result = GetPointTravelAvailability();
+            CameraCommandResult result = GetPointTravelAvailability(source);
             if (result == CameraCommandResult.Accepted)
             {
                 result = pointOfInterestTravel.PlanNext(wrap, request.Direction);
@@ -368,8 +406,13 @@ namespace Gley.CameraSystem
 
         public CameraCommandResult RequestPreviousPoint(bool wrap, TravelRequest request, out int commandId)
         {
+            return RequestPreviousPoint(wrap, request, CommandSource.Game, out commandId);
+        }
+
+        public CameraCommandResult RequestPreviousPoint(bool wrap, TravelRequest request, CommandSource source, out int commandId)
+        {
             commandId = 0;
-            CameraCommandResult result = GetPointTravelAvailability();
+            CameraCommandResult result = GetPointTravelAvailability(source);
             if (result == CameraCommandResult.Accepted)
             {
                 result = pointOfInterestTravel.PlanPrevious(wrap, request.Direction);
@@ -385,44 +428,98 @@ namespace Gley.CameraSystem
             return CameraCommandResult.Accepted;
         }
 
-        public void SetHeldIntent(float horizontal, float vertical, float zoom)
+        public CameraCommandResult SetHeldIntent(float horizontal, float vertical, float zoom)
         {
-            orbitMovement.SetHeldIntent(horizontal, vertical, zoom);
+            HeldInputGate heldInput = commandArbiter.HeldInput;
+            heldInput.ReceiveHeldInput(horizontal, vertical, zoom);
+            CameraCommandResult result = CameraCommandResult.Accepted;
+            if (!isActive)
+            {
+                result = CameraCommandResult.NotActive;
+            }
+            else if (commandArbiter.IsPlayerControlLocked)
+            {
+                heldInput.Rearm();
+                if (!heldInput.IsReceivedNeutral)
+                {
+                    result = CameraCommandResult.PlayerControlLocked;
+                }
+            }
+            else if (!heldInput.IsNeutral)
+            {
+                AcceptPlayerInput();
+            }
+
+            ApplyHeldInput();
+            return result;
         }
 
         public void SetHorizontalOrbitIntent(float intent)
         {
-            orbitMovement.SetHeldIntent(intent, orbitMovement.VerticalIntent, orbitMovement.ZoomIntent);
+            HeldInputGate heldInput = commandArbiter.HeldInput;
+            SetHeldIntent(intent, heldInput.ReceivedVertical, heldInput.ReceivedZoom);
         }
 
         public void SetHeightIntent(float intent)
         {
-            orbitMovement.SetHeldIntent(orbitMovement.HorizontalIntent, intent, orbitMovement.ZoomIntent);
+            HeldInputGate heldInput = commandArbiter.HeldInput;
+            SetHeldIntent(heldInput.ReceivedHorizontal, intent, heldInput.ReceivedZoom);
         }
 
         public void SetZoomIntent(float intent)
         {
-            orbitMovement.SetHeldIntent(orbitMovement.HorizontalIntent, orbitMovement.VerticalIntent, intent);
+            HeldInputGate heldInput = commandArbiter.HeldInput;
+            SetHeldIntent(heldInput.ReceivedHorizontal, heldInput.ReceivedVertical, intent);
         }
 
-        public void AddDrag(Vector2 normalizedDelta)
+        public CameraCommandResult AddDrag(Vector2 normalizedDelta)
         {
-            if (!CanApplyManualOrbitInput())
+            if (!isActive)
             {
-                return;
+                return CameraCommandResult.NotActive;
             }
 
-            orbitMovement.AddDrag(normalizedDelta);
+            if (normalizedDelta == Vector2.zero)
+            {
+                return CameraCommandResult.Accepted;
+            }
+
+            if (!AcceptPlayerInput())
+            {
+                return CameraCommandResult.PlayerControlLocked;
+            }
+
+            if (CanApplyManualOrbitInput())
+            {
+                orbitMovement.AddDrag(normalizedDelta);
+            }
+
+            return CameraCommandResult.Accepted;
         }
 
-        public void AddPinch(float normalizedSpan)
+        public CameraCommandResult AddPinch(float normalizedSpan)
         {
-            if (!CanApplyManualOrbitInput())
+            if (!isActive)
             {
-                return;
+                return CameraCommandResult.NotActive;
             }
 
-            orbitMovement.AddPinch(normalizedSpan);
+            if (normalizedSpan == 0f)
+            {
+                return CameraCommandResult.Accepted;
+            }
+
+            if (!AcceptPlayerInput())
+            {
+                return CameraCommandResult.PlayerControlLocked;
+            }
+
+            if (CanApplyManualOrbitInput())
+            {
+                orbitMovement.AddPinch(normalizedSpan);
+            }
+
+            return CameraCommandResult.Accepted;
         }
 
         public CameraCommandResult SetAimFrame(AimFrame frame)
@@ -437,7 +534,18 @@ namespace Gley.CameraSystem
             return CameraCommandResult.Accepted;
         }
 
-        private CameraCommandResult GetPointTravelAvailability()
+        public void SetPlayerControlLocked(bool locked)
+        {
+            commandArbiter.SetExplicitPlayerLock(locked);
+            ApplyHeldInput();
+        }
+
+        private bool IsBlockedByPlayerLock(CommandSource source)
+        {
+            return source == CommandSource.Player && commandArbiter.IsPlayerControlLocked;
+        }
+
+        private CameraCommandResult GetPointTravelAvailability(CommandSource source)
         {
             if (!isActive)
             {
@@ -447,6 +555,11 @@ namespace Gley.CameraSystem
             if (isTargetLost || !IsTargetAlive())
             {
                 return CameraCommandResult.MissingTarget;
+            }
+
+            if (IsBlockedByPlayerLock(source))
+            {
+                return CameraCommandResult.PlayerControlLocked;
             }
 
             if (chainOrbit == null)
@@ -459,10 +572,46 @@ namespace Gley.CameraSystem
 
         private int BeginPointTravel(TravelRequest request)
         {
-            int commandId = BeginCommand();
+            int commandId = BeginCommand(CommandKind.PointOfInterest, request.LockPlayerControl);
             orbitMovement.StopManualTravel();
             pointOfInterestTravel.BeginPlannedTravel(request.Speed, activeView.Preset.Travel);
             return commandId;
+        }
+
+        private int BeginCommand(CommandKind kind, bool holdsLock)
+        {
+            StopCommandMotion();
+            int commandId = commandArbiter.BeginCommand(kind, holdsLock);
+            ApplyHeldInput();
+            return commandId;
+        }
+
+        private void StopCommandMotion()
+        {
+            isTransitioning = false;
+            hasBearingDestination = false;
+            pointOfInterestTravel.Stop();
+        }
+
+        private void ApplyHeldInput()
+        {
+            HeldInputGate heldInput = commandArbiter.HeldInput;
+            orbitMovement.SetHeldIntent(heldInput.Horizontal, heldInput.Vertical, heldInput.Zoom);
+        }
+
+        private bool AcceptPlayerInput()
+        {
+            if (commandArbiter.IsPlayerControlLocked)
+            {
+                return false;
+            }
+
+            if (commandArbiter.HasRunningCommand)
+            {
+                StopCommandMotion();
+            }
+
+            return commandArbiter.AcceptPlayerInput();
         }
 
         private bool CanApplyManualOrbitInput()
@@ -540,6 +689,7 @@ namespace Gley.CameraSystem
             }
 
             target.ChainChanged += HandleChainChanged;
+            target.Teleported += HandleTeleported;
             target.Destroyed += HandleTargetDestroyed;
             subscribedTarget = target;
         }
@@ -552,6 +702,7 @@ namespace Gley.CameraSystem
             }
 
             subscribedTarget.ChainChanged -= HandleChainChanged;
+            subscribedTarget.Teleported -= HandleTeleported;
             subscribedTarget.Destroyed -= HandleTargetDestroyed;
             subscribedTarget = null;
         }
@@ -591,6 +742,7 @@ namespace Gley.CameraSystem
                 chainOrbit = null;
                 orbitFrame = null;
                 pointOfInterestTravel.SetOrbit(null, rootBody);
+                EndRunningCommand(CommandEndResult.TargetDisconnected);
                 ReportRejection($"{name}: the orbit '{activeOrbit.Name}' is invalid after the vehicle chain changed; the camera holds its pose.");
                 return;
             }
@@ -605,7 +757,32 @@ namespace Gley.CameraSystem
             chainOrbit = rebuiltOrbit;
             pointOfInterestTravel.SetOrbit(chainOrbit, rootBody);
             orbitFrame = new OrbitFrame(rootBody, activeOrbit.OrientationAdjustment);
+            if (hasBearingDestination)
+            {
+                OrbitPose destinationPose = new OrbitPose(destinationBearing, orbitMovement.PlayerZoom, orbitMovement.HeightOffset);
+                orbitDistance = storedPoseResolver.Resolve(destinationPose, chainOrbit, activeOrbit, orbitDistance).OrbitDistance;
+            }
+
             orbitMovement.Configure(chainOrbit, activeOrbit, activeView.Preset.OrbitMovement, new LivePose(orbitDistance, orbitMovement.PlayerZoom, orbitMovement.HeightOffset));
+            ReplanRunningTravel();
+        }
+
+        private void ReplanRunningTravel()
+        {
+            if (!pointOfInterestTravel.IsTravelling)
+            {
+                return;
+            }
+
+            CameraCommandResult result = pointOfInterestTravel.ReplanTravel(activeView.Preset.Travel);
+            if (result == CameraCommandResult.Unreachable)
+            {
+                EndRunningCommand(CommandEndResult.Unreachable);
+            }
+            else if (result != CameraCommandResult.Accepted)
+            {
+                EndRunningCommand(CommandEndResult.TargetDisconnected);
+            }
         }
 
         private bool IsTargetAlive()
@@ -629,16 +806,8 @@ namespace Gley.CameraSystem
 
         private void EndRunningCommand(CommandEndResult result)
         {
-            isTransitioning = false;
-            pointOfInterestTravel.Stop();
-            if (runningCommandId == 0)
-            {
-                return;
-            }
-
-            int endedCommandId = runningCommandId;
-            runningCommandId = 0;
-            CommandEnded?.Invoke(endedCommandId, result);
+            StopCommandMotion();
+            commandArbiter.EndRunningCommand(result);
         }
 
         private void ReportRejection(string message)
@@ -700,6 +869,23 @@ namespace Gley.CameraSystem
             HandleTargetLost();
         }
 
+        private void HandleTeleported()
+        {
+            if (!isActive || isTargetLost || assignedCamera == null || !IsTargetAlive())
+            {
+                return;
+            }
+
+            if (isTransitioning)
+            {
+                Quaternion rootDelta = rootBody.rotation * Quaternion.Inverse(lastRootRotation);
+                Vector3 startPosition = rootBody.position + rootDelta * (activationTransition.StartPosition - lastRootPosition);
+                activationTransition.RelocateStart(startPosition, rootDelta * activationTransition.StartRotation);
+            }
+
+            WriteCameraPose(0f);
+        }
+
         private void HandleCameraLost()
         {
             EndRunningCommand(CommandEndResult.CameraLost);
@@ -726,6 +912,7 @@ namespace Gley.CameraSystem
             orbitMovement.ClearHeldIntent();
             pointOfInterestTravel.Clear();
             isTransitioning = false;
+            hasBearingDestination = false;
         }
 
         private void ReleaseOwnership()
@@ -768,6 +955,7 @@ namespace Gley.CameraSystem
                 return;
             }
 
+            ApplyHeldInput();
             orbitMovement.UpdateOrbitMovement(deltaTime);
         }
 
@@ -778,6 +966,8 @@ namespace Gley.CameraSystem
                 return;
             }
 
+            lastRootPosition = rootBody.position;
+            lastRootRotation = rootBody.rotation;
             Vector3 cameraPosition;
             Quaternion cameraRotation;
             CalculateCameraPose(out cameraPosition, out cameraRotation);
@@ -787,7 +977,6 @@ namespace Gley.CameraSystem
                 assignedCamera.transform.SetPositionAndRotation(cameraPosition, cameraRotation);
                 if (activationTransition.IsComplete)
                 {
-                    isTransitioning = false;
                     EndRunningCommand(CommandEndResult.Completed);
                 }
 
@@ -976,6 +1165,7 @@ namespace Gley.CameraSystem
             rootProfile = target.GetProfile(target.RootIndex);
             RebuildChainBodies();
             aimFrame = view.Preset.AimFrame;
+            DiscardHeldInput();
             orbitFrame = null;
             orbitMovement.Clear();
             pointOfInterestTravel.Configure(chainOrbit, rootBody, orbitMovement);
@@ -989,12 +1179,10 @@ namespace Gley.CameraSystem
             orbitMovement.Configure(chainOrbit, orbit, view.Preset.OrbitMovement, pose);
         }
 
-        private int BeginCommand()
+        private void DiscardHeldInput()
         {
-            EndRunningCommand(CommandEndResult.Replaced);
-            runningCommandId = nextCommandId;
-            nextCommandId++;
-            return runningCommandId;
+            commandArbiter.HeldInput.Rearm();
+            ApplyHeldInput();
         }
 
         [ContextMenu("Activate")]

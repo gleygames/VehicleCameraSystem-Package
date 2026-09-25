@@ -4,6 +4,7 @@ namespace Gley.CameraSystem
     {
         public TravelDirection Direction { get; }
         public TransitionOptions Speed { get; }
+        public bool LockPlayerControl => Speed.LockPlayerControl;
 
         public TravelRequest(TravelDirection direction)
         {
@@ -15,6 +16,12 @@ namespace Gley.CameraSystem
         {
             Direction = direction;
             Speed = speed;
+        }
+
+        public TravelRequest(TravelDirection direction, bool lockPlayerControl)
+        {
+            Direction = direction;
+            Speed = new TransitionOptions(TransitionMode.PresetSpeed, lockPlayerControl);
         }
     }
 }

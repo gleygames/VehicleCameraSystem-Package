@@ -9,6 +9,8 @@ namespace Gley.CameraSystem
         private Vector3 startPosition;
         private Quaternion startRotation;
 
+        public Vector3 StartPosition => startPosition;
+        public Quaternion StartRotation => startRotation;
         public float Progress
         {
             get
@@ -42,6 +44,12 @@ namespace Gley.CameraSystem
             travelProfile.AdvanceTravel(deltaTime);
             cameraPosition = Vector3.Lerp(startPosition, destinationPosition, Progress);
             cameraRotation = Quaternion.Slerp(startRotation, destinationRotation, Progress);
+        }
+
+        public void RelocateStart(Vector3 initialPosition, Quaternion initialRotation)
+        {
+            startPosition = initialPosition;
+            startRotation = initialRotation;
         }
     }
 }
