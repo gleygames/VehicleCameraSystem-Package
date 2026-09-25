@@ -4,6 +4,8 @@ namespace Gley.CameraSystem
 {
     public class HalfLifeSmoother
     {
+        private const float NaturalLogOfTwo = 0.6931472f;
+
         public float Factor(float deltaTime, float halfLife)
         {
             if (halfLife <= 0f)
@@ -32,6 +34,24 @@ namespace Gley.CameraSystem
         public Quaternion Smooth(Quaternion current, Quaternion target, float deltaTime, float halfLife)
         {
             return Quaternion.Slerp(current, target, Factor(deltaTime, halfLife));
+        }
+
+        public Vector3 SmoothTowardMovingTarget(Vector3 current, Vector3 previousTarget, Vector3 target, float deltaTime, float halfLife)
+        {
+            if (halfLife <= 0f)
+            {
+                return target;
+            }
+
+            if (deltaTime <= 0f)
+            {
+                return current;
+            }
+
+            float factor = Factor(deltaTime, halfLife);
+            Vector3 targetVelocity = (target - previousTarget) / deltaTime;
+            float timeConstant = halfLife / NaturalLogOfTwo;
+            return target + (current - previousTarget) * (1f - factor) - targetVelocity * (factor * timeConstant);
         }
     }
 }
