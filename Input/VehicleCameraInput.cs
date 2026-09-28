@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Gley.Common;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.EventSystems;
 
 namespace Gley.CameraSystem.Input
 {
@@ -9,6 +10,8 @@ namespace Gley.CameraSystem.Input
     {
         private const string ShippedActionsPath = "Assets/Gley/VehicleCameraSystem/Input/VehicleCameraInputActions.inputactions";
         private const string CameraMapName = "Camera";
+
+        private readonly TouchGestureRecognizer gestures = new TouchGestureRecognizer();
 
         [SerializeField] private CameraSystemController cameraController;
         [SerializeField] private InputActionAsset actions;
@@ -22,23 +25,39 @@ namespace Gley.CameraSystem.Input
         private InputAction orbitButtonAction;
         private InputAction pointerDeltaAction;
         private InputAction scrollAction;
+        private InputAction touchContactAction;
         private InputAction nextViewAction;
         private InputAction orbitResetAction;
         private InputAction fullResetAction;
         private InputAction nextPointAction;
         private InputAction previousPointAction;
+        [SerializeField] private RectTransform gestureArea;
+        [SerializeField] private TouchDoubleTapAction doubleTapAction = TouchDoubleTapAction.OrbitReset;
         [SerializeField, Range(0f, 0.9f)] private float stickDeadZone = 0.15f;
+        [SerializeField, Min(0f)] private float dragStartThreshold = 0.01f;
+        [SerializeField, Min(0f)] private float doubleTapInterval = 0.3f;
+        [SerializeField, Min(0f)] private float doubleTapDistance = 0.02f;
+        [SerializeField, Min(0f)] private float scrollPinchPerUnit = 0.1f;
         private bool hasWarnedMissingMap;
+        private bool mouseNeedsRelease;
+        private bool wasLocked;
 
         public CameraSystemController CameraController => cameraController;
         public InputActionAsset Actions => actions;
         public PlayerInput PlayerInput => playerInput;
+        public RectTransform GestureArea => gestureArea;
+        public TouchDoubleTapAction DoubleTapAction => doubleTapAction;
         public float StickDeadZone => stickDeadZone;
+        public float ScrollPinchPerUnit => scrollPinchPerUnit;
 
         private void OnEnable()
         {
             BindActions();
             EnableActions();
+            if (cameraController != null)
+            {
+                cameraController.ViewChanged += OnViewChanged;
+            }
         }
 
         private void Update()
@@ -56,13 +75,23 @@ namespace Gley.CameraSystem.Input
 
             UpdateHeldIntent();
             UpdateOrbitDrag();
-            UpdateScroll();
+            UpdateTouchGestures();
         }
 
         public void Configure(CameraSystemController controller, InputActionAsset actionsAsset)
         {
+            if (isActiveAndEnabled && cameraController != null)
+            {
+                cameraController.ViewChanged -= OnViewChanged;
+            }
+
             cameraController = controller;
             actions = actionsAsset;
+            if (isActiveAndEnabled && cameraController != null)
+            {
+                cameraController.ViewChanged += OnViewChanged;
+            }
+
             RebindIfEnabled();
         }
 
@@ -75,6 +104,16 @@ namespace Gley.CameraSystem.Input
         public void SetStickDeadZone(float value)
         {
             stickDeadZone = Mathf.Clamp(value, 0f, 0.9f);
+        }
+
+        public void ConfigureGestures(RectTransform area, float dragStart, float tapInterval, float tapDistance, TouchDoubleTapAction action)
+        {
+            gestureArea = area;
+            dragStartThreshold = Mathf.Max(0f, dragStart);
+            doubleTapInterval = Mathf.Max(0f, tapInterval);
+            doubleTapDistance = Mathf.Max(0f, tapDistance);
+            doubleTapAction = action;
+            DiscardGestures();
         }
 
         private void BindActions()
@@ -104,6 +143,7 @@ namespace Gley.CameraSystem.Input
             orbitButtonAction = cameraActionMap.FindAction("OrbitButton");
             pointerDeltaAction = cameraActionMap.FindAction("PointerDelta");
             scrollAction = cameraActionMap.FindAction("Scroll");
+            touchContactAction = cameraActionMap.FindAction("TouchContact");
             nextViewAction = cameraActionMap.FindAction("NextView");
             orbitResetAction = cameraActionMap.FindAction("OrbitReset");
             fullResetAction = cameraActionMap.FindAction("FullReset");
@@ -166,20 +206,149 @@ namespace Gley.CameraSystem.Input
             cameraController.AddDrag(normalizedDelta);
         }
 
-        private void UpdateScroll()
+        private void UpdateTouchGestures()
         {
-            if (scrollAction == null)
+            bool locked = cameraController.IsPlayerControlLocked;
+            if (locked)
             {
+                if (!wasLocked)
+                {
+                    DiscardGestures();
+                }
+
+                wasLocked = true;
                 return;
             }
 
-            float scrollValue = scrollAction.ReadValue<float>();
-            if (scrollValue == 0f)
+            wasLocked = false;
+            gestures.Configure(dragStartThreshold, doubleTapInterval, doubleTapDistance);
+            gestures.BeginFrame(Screen.width, Screen.height, Time.unscaledTime);
+            Touchscreen touchscreen = Touchscreen.current;
+            bool hasActiveTouch = false;
+            if (touchContactAction != null && touchContactAction.enabled && touchscreen != null && IsDevicePaired(touchscreen))
             {
-                return;
+                for (int index = 0; index < touchscreen.touches.Count; index++)
+                {
+                    UnityEngine.InputSystem.Controls.TouchControl touch = touchscreen.touches[index];
+                    UnityEngine.InputSystem.TouchPhase phase = touch.phase.ReadValue();
+                    if (phase == UnityEngine.InputSystem.TouchPhase.None)
+                    {
+                        continue;
+                    }
+
+                    hasActiveTouch = true;
+                    int id = touch.touchId.ReadValue();
+                    Vector2 position = touch.position.ReadValue();
+                    bool overUi = false;
+                    bool inArea = false;
+                    if (phase == UnityEngine.InputSystem.TouchPhase.Began)
+                    {
+                        overUi = IsOverUi(id);
+                        inArea = IsInsideGestureArea(position);
+                    }
+
+                    gestures.FeedTouch(id, phase, position, overUi, inArea);
+                }
             }
 
-            cameraController.AddPinch(scrollValue);
+            Mouse mouse = Mouse.current;
+            if (!hasActiveTouch && mouse != null && IsDevicePaired(mouse))
+            {
+                bool pressed = mouse.leftButton.isPressed;
+                if (mouseNeedsRelease)
+                {
+                    if (!pressed)
+                    {
+                        mouseNeedsRelease = false;
+                    }
+                }
+                else
+                {
+                    Vector2 position = mouse.position.ReadValue();
+                    gestures.FeedMouse(pressed, position, IsOverUi(-1), IsInsideGestureArea(position));
+                    if (scrollAction != null)
+                    {
+                        float scrollUnits = Mathf.Clamp(scrollAction.ReadValue<float>(), -1f, 1f);
+                        gestures.FeedMouseScroll(scrollUnits * scrollPinchPerUnit, IsOverUi(-1), IsInsideGestureArea(position));
+                    }
+                }
+            }
+
+            gestures.EndFrame();
+            if (gestures.Drag != Vector2.zero)
+            {
+                cameraController.AddDrag(gestures.Drag);
+            }
+
+            if (gestures.Pinch != 0f)
+            {
+                cameraController.AddPinch(gestures.Pinch);
+            }
+
+            if (gestures.DoubleTapped)
+            {
+                int commandId;
+                if (doubleTapAction == TouchDoubleTapAction.OrbitReset)
+                {
+                    cameraController.OrbitReset(CommandSource.Player, out commandId);
+                }
+                else if (doubleTapAction == TouchDoubleTapAction.FullReset)
+                {
+                    cameraController.FullReset(CommandSource.Player, out commandId);
+                }
+            }
+        }
+
+        private bool IsDevicePaired(InputDevice device)
+        {
+            if (playerInput == null)
+            {
+                return true;
+            }
+
+            for (int index = 0; index < playerInput.devices.Count; index++)
+            {
+                if (playerInput.devices[index] == device)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsOverUi(int pointerId)
+        {
+            return EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(pointerId);
+        }
+
+        private bool IsInsideGestureArea(Vector2 position)
+        {
+            if (gestureArea == null)
+            {
+                return true;
+            }
+
+            Canvas canvas = gestureArea.GetComponentInParent<Canvas>();
+            Camera eventCamera = null;
+            if (canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay)
+            {
+                eventCamera = canvas.worldCamera;
+            }
+
+            return RectTransformUtility.RectangleContainsScreenPoint(gestureArea, position, eventCamera);
+        }
+
+        private void OnViewChanged(int viewId)
+        {
+            DiscardGestures();
+        }
+
+        private void DiscardGestures()
+        {
+            gestures.Clear();
+            Mouse mouse = Mouse.current;
+            mouseNeedsRelease = mouse != null && mouse.leftButton.isPressed;
         }
 
         private void RebindIfEnabled()
@@ -191,6 +360,7 @@ namespace Gley.CameraSystem.Input
 
             DisableActions();
             UnbindActions();
+            DiscardGestures();
             BindActions();
             EnableActions();
         }
@@ -348,6 +518,7 @@ namespace Gley.CameraSystem.Input
             orbitButtonAction = null;
             pointerDeltaAction = null;
             scrollAction = null;
+            touchContactAction = null;
             nextViewAction = null;
             orbitResetAction = null;
             fullResetAction = null;
@@ -393,8 +564,14 @@ namespace Gley.CameraSystem.Input
 
         private void OnDisable()
         {
+            if (cameraController != null)
+            {
+                cameraController.ViewChanged -= OnViewChanged;
+            }
+
             DisableActions();
             UnbindActions();
+            DiscardGestures();
         }
     }
 }

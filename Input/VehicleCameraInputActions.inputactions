@@ -122,6 +122,15 @@
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": false
+                },
+                {
+                    "name": "TouchContact",
+                    "type": "PassThrough",
+                    "id": "b9f08a73-9c17-4600-8fb7-694a67318c45",
+                    "expectedControlType": "Button",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
                 }
             ],
             "bindings": [
@@ -421,6 +430,17 @@
                     "action": "PreviousPoint",
                     "isComposite": false,
                     "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "79090237-f122-48e8-a851-0e9802018460",
+                    "path": "<Touchscreen>/touch*/press",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": ";Touch",
+                    "action": "TouchContact",
+                    "isComposite": false,
+                    "isPartOfComposite": false
                 }
             ]
         }
@@ -448,6 +468,17 @@
             "devices": [
                 {
                     "devicePath": "<Gamepad>",
+                    "isOptional": false,
+                    "isOR": false
+                }
+            ]
+        },
+        {
+            "name": "Touch",
+            "bindingGroup": "Touch",
+            "devices": [
+                {
+                    "devicePath": "<Touchscreen>",
                     "isOptional": false,
                     "isOR": false
                 }
