@@ -1,3 +1,4 @@
+using UnityEditor;
 using UnityEngine;
 
 namespace Gley.CameraSystem.Editor
@@ -37,9 +38,31 @@ namespace Gley.CameraSystem.Editor
             }
         }
 
+        public void RecordHandleChange(Object target, string undoName)
+        {
+            int hotControl = GUIUtility.hotControl;
+            if (hotControl == 0)
+            {
+                Undo.RecordObject(target, undoName);
+                return;
+            }
+
+            if (hotControl != recordedControl)
+            {
+                Undo.RecordObject(target, undoName);
+                recordedControl = hotControl;
+            }
+        }
+
         public void CompleteHandleChange()
         {
             context.CompleteProfileChange();
+        }
+
+        public void CompleteHandleChange(Object target)
+        {
+            EditorUtility.SetDirty(target);
+            context.MarkIssuesDirty();
         }
     }
 }

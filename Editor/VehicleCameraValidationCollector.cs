@@ -8,12 +8,15 @@ namespace Gley.CameraSystem.Editor
     public class VehicleCameraValidationCollector
     {
         private const float SharpCornerTolerance = 1f;
+        private const float AnchorHeightTolerance = 0.0001f;
         private const string BlockedViewsSuffix = " Views that use this orbit are blocked.";
         private const string BlockedChainSuffix = " Views that use this orbit are blocked while other bodies are attached.";
 
         private readonly List<Transform> targetBodies = new List<Transform>();
         private readonly VehicleProfileValidator profileValidator = new VehicleProfileValidator();
         private readonly OrbitBearingValidator bearingValidator = new OrbitBearingValidator();
+        private readonly ClippingEstimator clippingEstimator = new ClippingEstimator();
+        private readonly PairOverrideAuthoring overrideAuthoring = new PairOverrideAuthoring();
         private readonly StringBuilder messageBuilder = new StringBuilder();
         private readonly IInputSystemInstallation inputSystemInstallation;
 
@@ -40,6 +43,33 @@ namespace Gley.CameraSystem.Editor
             {
                 CollectOrbitIssues(profile, issues);
             }
+
+            if (tab == VehicleCameraTabKind.Connections)
+            {
+                CollectConnectorAnchorIssues(profile, issues);
+            }
+        }
+
+        public void CollectChainIssues(ConnectionChainPreview preview, List<EditorIssue> issues)
+        {
+            if (preview == null || preview.BodyCount == 0 || preview.RootOrbit == null)
+            {
+                return;
+            }
+
+            VehicleProfile rootProfile = preview.Profiles[preview.RootIndex];
+            if (preview.BodyCount > 1 && preview.IsMerged)
+            {
+                if (preview.LayoutResult != ChainLayoutResult.Valid)
+                {
+                    CollectChainLayoutIssue(preview, rootProfile, issues);
+                    return;
+                }
+
+                CollectChainBearingIssue(preview, rootProfile, issues);
+            }
+
+            CollectClippingIssue(preview, rootProfile, issues);
         }
 
         public void CollectTargetIssues(VehicleCameraTarget target, List<EditorIssue> issues)
@@ -441,6 +471,213 @@ namespace Gley.CameraSystem.Editor
         private void AddOrbitIssue(VehicleProfile profile, VehicleOrbit orbit, EditorIssueSeverity severity, string problem, List<EditorIssue> issues)
         {
             issues.Add(new EditorIssue(severity, $"Orbit '{orbit.Name}': {problem}", profile, orbit.Id));
+        }
+
+        private void CollectConnectorAnchorIssues(VehicleProfile profile, List<EditorIssue> issues)
+        {
+            if (profile.ConnectorAnchors == null)
+            {
+                return;
+            }
+
+            for (int orbitIndex = 0; orbitIndex < profile.Orbits.Count; orbitIndex++)
+            {
+                VehicleOrbit orbit = profile.Orbits[orbitIndex];
+                if (orbit == null || !orbit.MergeWhenAttached || AreAnchorsAtBaseHeight(profile, orbit))
+                {
+                    continue;
+                }
+
+                string problem = $"the connector anchors are not at this orbit's base height ({orbit.BaseHeight:0.###} m), so attaching another body fails with an invalid connector. Regenerate the profile in Setup, or set the base height to the anchors' height.";
+                AddOrbitIssue(profile, orbit, EditorIssueSeverity.Warning, problem, issues);
+            }
+        }
+
+        private bool AreAnchorsAtBaseHeight(VehicleProfile profile, VehicleOrbit orbit)
+        {
+            VehicleConnectorAnchors anchors = profile.ConnectorAnchors;
+            Vector3 planeNormal = orbit.OrientationAdjustment * Vector3.up;
+            return Mathf.Abs(Vector3.Dot(anchors.FrontLocalPosition, planeNormal) - orbit.BaseHeight) <= AnchorHeightTolerance
+                && Mathf.Abs(Vector3.Dot(anchors.RearLocalPosition, planeNormal) - orbit.BaseHeight) <= AnchorHeightTolerance;
+        }
+
+        private void CollectChainLayoutIssue(ConnectionChainPreview preview, VehicleProfile rootProfile, List<EditorIssue> issues)
+        {
+            string orbitName = preview.RootOrbit.Name;
+            switch (preview.LayoutResult)
+            {
+                case ChainLayoutResult.MissingProfile:
+                    AddChainIssue(EditorIssueSeverity.Error, "a partner has no vehicle profile.", rootProfile, issues);
+                    break;
+                case ChainLayoutResult.MissingOrbit:
+                    AddChainIssue(EditorIssueSeverity.Error, $"'{GetMissingOrbitProfileName(preview)}' has no orbit to join the chain.", rootProfile, issues);
+                    break;
+                case ChainLayoutResult.SelfIntersecting:
+                    AddChainIssue(EditorIssueSeverity.Error, $"the assembled orbit crosses itself, so views that use orbit '{orbitName}' are blocked while these bodies are attached. Check the removable sections, the connector anchors and the pair overrides.", rootProfile, issues);
+                    break;
+                case ChainLayoutResult.Open:
+                    AddChainIssue(EditorIssueSeverity.Error, $"the assembled orbit does not close, so views that use orbit '{orbitName}' are blocked while these bodies are attached. Check the removable sections and the connectors.", rootProfile, issues);
+                    break;
+                default:
+                    CollectInvalidConnectorIssues(preview, rootProfile, issues);
+                    break;
+            }
+        }
+
+        private void AddChainIssue(EditorIssueSeverity severity, string problem, Object target, List<EditorIssue> issues)
+        {
+            issues.Add(new EditorIssue(severity, "Chain preview: " + problem, target, 0));
+        }
+
+        private string GetMissingOrbitProfileName(ConnectionChainPreview preview)
+        {
+            for (int index = 0; index < preview.BodyCount; index++)
+            {
+                if (preview.Profiles[index] != null && preview.BodyOrbits[index] == null)
+                {
+                    return preview.Profiles[index].name;
+                }
+            }
+
+            return preview.Profiles[preview.RootIndex].name;
+        }
+
+        private void CollectInvalidConnectorIssues(ConnectionChainPreview preview, VehicleProfile rootProfile, List<EditorIssue> issues)
+        {
+            int issueCount = issues.Count;
+            for (int index = 0; index < preview.BodyCount; index++)
+            {
+                CollectBodyConnectorIssue(preview.Profiles[index], preview.BodyOrbits[index], issues);
+            }
+
+            for (int jointIndex = 0; jointIndex < preview.JointOverrides.Count; jointIndex++)
+            {
+                CollectOverrideIssue(preview, jointIndex, issues);
+            }
+
+            if (issues.Count == issueCount)
+            {
+                AddChainIssue(EditorIssueSeverity.Error, "the connectors between these bodies could not be built.", rootProfile, issues);
+            }
+        }
+
+        private void CollectBodyConnectorIssue(VehicleProfile profile, VehicleOrbit orbit, List<EditorIssue> issues)
+        {
+            if (profile == null || orbit == null)
+            {
+                return;
+            }
+
+            if (profile.ConnectorAnchors == null)
+            {
+                AddChainIssue(EditorIssueSeverity.Error, $"'{profile.name}' has no connector anchors. Regenerate it in Setup.", profile, issues);
+                return;
+            }
+
+            if (!AreAnchorsAtBaseHeight(profile, orbit))
+            {
+                AddChainIssue(EditorIssueSeverity.Error, $"the connector anchors of '{profile.name}' are not at the base height of its orbit '{orbit.Name}' ({orbit.BaseHeight:0.###} m).", profile, issues);
+                return;
+            }
+
+            ClosedBezierOrbit closedOrbit = new ClosedBezierOrbit(orbit);
+            if (closedOrbit.ValidationResult != OrbitValidationResult.Valid)
+            {
+                AddChainIssue(EditorIssueSeverity.Error, $"orbit '{orbit.Name}' of '{profile.name}' is invalid ({closedOrbit.ValidationResult}). Fix it in the Orbits tab.", profile, issues);
+                return;
+            }
+
+            if (closedOrbit.RemovableSectionValidationResult != OrbitRemovableSectionValidationResult.Valid)
+            {
+                AddChainIssue(EditorIssueSeverity.Error, $"the removable sections of orbit '{orbit.Name}' of '{profile.name}' are invalid ({closedOrbit.RemovableSectionValidationResult}). Fix them in the Orbits tab.", profile, issues);
+            }
+        }
+
+        private void CollectOverrideIssue(ConnectionChainPreview preview, int jointIndex, List<EditorIssue> issues)
+        {
+            OrbitConnectorPairOverride connectorOverride = preview.JointOverrides[jointIndex];
+            VehicleProfile frontProfile = preview.Profiles[jointIndex];
+            VehicleProfile rearProfile = preview.Profiles[jointIndex + 1];
+            if (connectorOverride == null || frontProfile == null || rearProfile == null)
+            {
+                return;
+            }
+
+            if (!connectorOverride.Matches(frontProfile, rearProfile, OrbitAttachmentEnd.Rear, OrbitAttachmentEnd.Front))
+            {
+                AddChainIssue(EditorIssueSeverity.Error, $"pair override '{connectorOverride.name}' is not for '{frontProfile.name}' → '{rearProfile.name}'.", connectorOverride, issues);
+                return;
+            }
+
+            if (overrideAuthoring.TryGetGeneratedPair(frontProfile, rearProfile, preview.RootOrbit.Name, out GeneratedOrbitConnectorPair generatedPair) && !overrideAuthoring.MatchesGeneratedEnds(connectorOverride, generatedPair))
+            {
+                AddChainIssue(EditorIssueSeverity.Error, $"pair override '{connectorOverride.name}' no longer ends where the generated connectors of '{frontProfile.name}' → '{rearProfile.name}' end (a curve, removable section or anchor changed). Create the override again.", connectorOverride, issues);
+            }
+        }
+
+        private void CollectChainBearingIssue(ConnectionChainPreview preview, VehicleProfile rootProfile, List<EditorIssue> issues)
+        {
+            if (!preview.IsOrbitValid)
+            {
+                return;
+            }
+
+            IReadOnlyList<float> ambiguousBearings = bearingValidator.FindAmbiguousBearings(preview.Orbit.Bearing);
+            if (ambiguousBearings.Count == 0)
+            {
+                return;
+            }
+
+            string problem = $"a bearing ray from the assembled orbit's centre crosses it more than once at bearings {FormatBearingRanges(ambiguousBearings)}. Angle limits and view mapping there use the crossing nearest the camera.";
+            AddChainIssue(EditorIssueSeverity.Warning, problem, rootProfile, issues);
+        }
+
+        private void CollectClippingIssue(ConnectionChainPreview preview, VehicleProfile rootProfile, List<EditorIssue> issues)
+        {
+            if (!preview.IsOrbitValid)
+            {
+                return;
+            }
+
+            IReadOnlyList<ClippingWarning> warnings = clippingEstimator.Estimate(preview.Orbit, preview.RootOrbit, preview.Models, preview.StraightBodyMatrices);
+            if (warnings.Count == 0)
+            {
+                return;
+            }
+
+            messageBuilder.Clear();
+            messageBuilder.Append("Likely clipping at extreme poses: the vehicle itself blocks the camera's line to its watch point");
+            AppendClippingPoses(warnings, true, true, "lowest height, zoomed in");
+            AppendClippingPoses(warnings, true, false, "lowest height, zoomed out");
+            AppendClippingPoses(warnings, false, true, "highest height, zoomed in");
+            AppendClippingPoses(warnings, false, false, "highest height, zoomed out");
+            messageBuilder.Append(". Reshape the curve, narrow the zoom or height range, or move the watch points.");
+            issues.Add(new EditorIssue(EditorIssueSeverity.Warning, messageBuilder.ToString(), rootProfile, 0));
+        }
+
+        private void AppendClippingPoses(IReadOnlyList<ClippingWarning> warnings, bool isLow, bool isZoomedIn, string poseName)
+        {
+            bool hasPose = false;
+            for (int index = 0; index < warnings.Count; index++)
+            {
+                ClippingWarning warning = warnings[index];
+                if (warning.IsLow != isLow || warning.IsZoomedIn != isZoomedIn)
+                {
+                    continue;
+                }
+
+                if (hasPose)
+                {
+                    messageBuilder.Append(", ");
+                }
+                else
+                {
+                    messageBuilder.Append($"; {poseName} at ");
+                    hasPose = true;
+                }
+
+                messageBuilder.Append($"{warning.Bearing:0.#}°");
+            }
         }
     }
 }

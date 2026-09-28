@@ -19,6 +19,7 @@ namespace Gley.CameraSystem.Editor
 
         [SerializeField] private VehicleProfile profile;
         [SerializeField] private ProfileGenerationSettings generationSettings = new ProfileGenerationSettings();
+        [SerializeField] private ConnectionChainSelection connectionSelection = new ConnectionChainSelection();
         [SerializeField] private Vector2 scrollPosition;
         private VehicleCameraWindowContext context;
         private VehicleCameraValidationPanel validationPanel;
@@ -43,10 +44,16 @@ namespace Gley.CameraSystem.Editor
             context = new VehicleCameraWindowContext(new VehicleCameraValidationCollector(inputSystemInstallation));
             context.SetProfile(profile);
             validationPanel = new VehicleCameraValidationPanel(context);
-            profileSaver = new ProfileAssetSaver(new VehicleCameraAssetSaver(properties));
+            VehicleCameraAssetSaver assetSaver = new VehicleCameraAssetSaver(properties);
+            profileSaver = new ProfileAssetSaver(assetSaver);
             if (generationSettings == null)
             {
                 generationSettings = new ProfileGenerationSettings();
+            }
+
+            if (connectionSelection == null)
+            {
+                connectionSelection = new ConnectionChainSelection();
             }
 
             serializedWindow = new SerializedObject(this);
@@ -55,7 +62,7 @@ namespace Gley.CameraSystem.Editor
             tabs.Add(new VehicleCameraSetupTab(context, inputSystemInstallation, profileSaver, generationSettings, serializedWindow, serializedWindow.FindProperty(nameof(generationSettings))));
             tabs.Add(new VehicleCameraOrbitsTab(context));
             tabs.Add(new VehicleCameraViewsTab(context));
-            tabs.Add(new VehicleCameraConnectionsTab(context));
+            tabs.Add(new VehicleCameraConnectionsTab(context, connectionSelection, assetSaver));
 
             tabIssues.Clear();
             for (int index = 0; index < tabs.Count; index++)
