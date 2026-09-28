@@ -15,6 +15,8 @@ namespace Gley.CameraSystem.Editor
         private readonly ProfileAssetSaver profileSaver;
         private readonly VehicleCameraAssetSaver assetSaver;
 
+        public static IInputCompanionInstaller InputCompanionInstaller { get; set; }
+
         public VehicleCameraSetup(ProfileGenerator profileGenerator, ProfileAssetSaver saver, VehicleCameraAssetSaver cameraAssetSaver)
         {
             generator = profileGenerator;
@@ -179,6 +181,11 @@ namespace Gley.CameraSystem.Editor
                 Undo.RecordObject(controller, "Configure Vehicle Camera");
                 controller.Configure(camera, target, InitialViewName);
                 EditorUtility.SetDirty(controller);
+            }
+
+            if (isInputSystemInstalled && InputCompanionInstaller != null)
+            {
+                InputCompanionInstaller.InstallInputCompanion(camera.gameObject, controller);
             }
 
             return new VehicleCameraSetupResult(VehicleCameraSetupStatus.Accepted, profile, target, controller, generatedProfile, createdTarget, createdController, isInputSystemInstalled);

@@ -1,12 +1,15 @@
 {
-    "name": "Gley.CameraSystem.Input",
-    "rootNamespace": "Gley.CameraSystem.Input",
+    "name": "Gley.CameraSystem.Input.Editor",
+    "rootNamespace": "Gley.CameraSystem.Input.Editor",
     "references": [
         "Gley.CameraSystem",
-        "Gley.Common",
+        "Gley.CameraSystem.Editor",
+        "Gley.CameraSystem.Input",
         "Unity.InputSystem"
     ],
-    "includePlatforms": [],
+    "includePlatforms": [
+        "Editor"
+    ],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,
