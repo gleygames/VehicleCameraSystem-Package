@@ -31,6 +31,7 @@ namespace Gley.CameraSystem
 
         private float leadOrbitLength;
         private float retainedLeadStartDistance;
+        private float signedArea;
 
         public IReadOnlyList<AssembledBezierOrbitSegment> Segments => segments;
         public IReadOnlyList<MergedMarker> MergedMarkers => mergedMarkers;
@@ -106,7 +107,7 @@ namespace Gley.CameraSystem
             Vector3 planeNormal = bodyOrbits[rootIndex].OrientationAdjustment * Vector3.up;
             Vector3 inwardNormal = Vector3.Cross(tangent.normalized, planeNormal);
 
-            if (CalculateSignedArea() < 0f)
+            if (signedArea < 0f)
             {
                 inwardNormal = Vector3.Cross(planeNormal, tangent.normalized);
             }
@@ -306,6 +307,7 @@ namespace Gley.CameraSystem
             Length = 0f;
             leadOrbitLength = 0f;
             retainedLeadStartDistance = 0f;
+            signedArea = 0f;
             AssemblyResult = ChainOrbitAssemblyResult.NotAssembled;
 
             if (!HasValidInputs())
@@ -361,6 +363,7 @@ namespace Gley.CameraSystem
             }
 
             BuildArcLengthSamples();
+            signedArea = CalculateSignedArea();
 
             if (Length < MinimumLength)
             {
@@ -556,7 +559,7 @@ namespace Gley.CameraSystem
 
             float wrappedDistance = Mathf.Repeat(distance, Length);
 
-            for (int sampleIndex = 1; sampleIndex < samples.Count; sampleIndex++)
+            for (int sampleIndex = FindFirstSampleAtOrAfter(wrappedDistance); sampleIndex < samples.Count; sampleIndex++)
             {
                 OrbitArcLengthSample previousSample = samples[sampleIndex - 1];
                 OrbitArcLengthSample currentSample = samples[sampleIndex];
@@ -583,6 +586,31 @@ namespace Gley.CameraSystem
             }
 
             return false;
+        }
+
+        private int FindFirstSampleAtOrAfter(float distance)
+        {
+            int low = 1;
+            int high = samples.Count - 1;
+            if (high < low || samples[high].Distance < distance)
+            {
+                return samples.Count;
+            }
+
+            while (low < high)
+            {
+                int middle = (low + high) / 2;
+                if (samples[middle].Distance >= distance)
+                {
+                    high = middle;
+                }
+                else
+                {
+                    low = middle + 1;
+                }
+            }
+
+            return low;
         }
 
         private void AddLeadRetainedSegments()

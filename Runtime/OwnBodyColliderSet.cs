@@ -45,7 +45,29 @@ namespace Gley.CameraSystem
                 return false;
             }
 
-            return colliderIds.BinarySearch(candidate.GetInstanceID()) >= 0;
+            int instanceId = candidate.GetInstanceID();
+            int low = 0;
+            int high = colliderIds.Count - 1;
+            while (low <= high)
+            {
+                int middle = low + (high - low) / 2;
+                int middleId = colliderIds[middle];
+                if (middleId == instanceId)
+                {
+                    return true;
+                }
+
+                if (middleId < instanceId)
+                {
+                    low = middle + 1;
+                }
+                else
+                {
+                    high = middle - 1;
+                }
+            }
+
+            return false;
         }
 
         public void Clear()

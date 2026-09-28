@@ -39,6 +39,7 @@ namespace Gley.CameraSystem
         private readonly SeatMotion seatMotion = new SeatMotion();
         private readonly CameraCollision cameraCollision = new CameraCollision();
         private readonly OwnBodyColliderSet ownBodyColliders = new OwnBodyColliderSet();
+        private readonly CameraProfilerMarkers profilerMarkers = new CameraProfilerMarkers();
 
         [SerializeField] private Camera assignedCamera;
         [SerializeField] private VehicleCameraTarget target;
@@ -117,6 +118,7 @@ namespace Gley.CameraSystem
         public float OrbitSensitivity => playerPreferences.OrbitSensitivity;
         public float LookSensitivity => playerPreferences.LookSensitivity;
         public int OwnBodyColliderCount => ownBodyColliders.Count;
+        public int CollisionCastsThisFrame => cameraCollision.CastsThisFrame;
         public bool IsActive => isActive;
         public bool IsTargetLost => isTargetLost;
         public bool IsPlayerControlLocked => commandArbiter.IsPlayerControlLocked;
@@ -202,79 +204,10 @@ namespace Gley.CameraSystem
 
         public CameraCommandResult Activate(TransitionOptions options, out int commandId)
         {
-            commandId = 0;
-            if (assignedCamera == null)
+            using (profilerMarkers.Activation.Auto())
             {
-                ReportRejection($"{name}: Activate rejected: {CameraCommandResult.MissingCamera}.");
-                return CameraCommandResult.MissingCamera;
+                return ActivateCamera(options, out commandId);
             }
-
-            if (!IsTargetConfigured(target))
-            {
-                ReportRejection($"{name}: Activate rejected: {CameraCommandResult.MissingTarget}.");
-                return CameraCommandResult.MissingTarget;
-            }
-
-            CameraSystemController owner;
-            if (TryGetOtherOwner(out owner))
-            {
-                ReportRejection($"{name}: Activate rejected: camera in use. Camera '{assignedCamera.name}' is owned by '{owner.name}'.");
-                return CameraCommandResult.CameraInUse;
-            }
-
-            VehicleViewEntry view;
-            VehicleOrbit orbit;
-            ChainOrbit builtOrbit;
-            Vector3 startPosition = assignedCamera.transform.position;
-            Quaternion startRotation = assignedCamera.transform.rotation;
-            CameraCommandResult result = ValidateView(target, initialViewName, out view, out orbit, out builtOrbit);
-            if (result != CameraCommandResult.Accepted)
-            {
-                ReportRejection($"{name}: Activate of view '{initialViewName}' rejected: {result}.");
-                return result;
-            }
-
-            if (!isActive)
-            {
-                renderingState.RecordBaseline(assignedCamera);
-            }
-
-            viewSwitcher.Stop();
-            EndRunningCommand(CommandEndResult.Replaced);
-            AcquireOwnership();
-            SubscribeToTarget();
-            isActive = true;
-            isTargetLost = false;
-            ApplyView(view, orbit, builtOrbit);
-            rootMotionEstimator.Configure(target, Vector3.zero);
-            WarnAboutRigidbodyInterpolation();
-            if (options.Mode != TransitionMode.Snap)
-            {
-                Vector3 destinationPosition = CalculateTransitionDestination();
-                float easeTime = activeView.Preset.Travel.EaseTime;
-                if (options.Mode == TransitionMode.Duration)
-                {
-                    activationTransition.BeginWithDuration(startPosition, startRotation, destinationPosition, options.Value, easeTime);
-                }
-                else
-                {
-                    float speed = options.Value;
-                    if (options.Mode == TransitionMode.PresetSpeed)
-                    {
-                        speed = activeView.Preset.Travel.StraightLineTransitionSpeed;
-                    }
-
-                    activationTransition.Begin(startPosition, startRotation, destinationPosition, speed, easeTime);
-                }
-
-                commandId = BeginCommand(CommandKind.Activation, options.LockPlayerControl);
-                isTransitioning = true;
-                hasBearingDestination = chainOrbit != null;
-                destinationBearing = view.DefaultPose.Bearing;
-            }
-
-            WriteCameraPose(0f);
-            return CameraCommandResult.Accepted;
         }
 
         public void Deactivate()
@@ -388,18 +321,21 @@ namespace Gley.CameraSystem
                 destinationViewName = activeView.Name;
             }
 
-            VehicleViewEntry view;
-            VehicleOrbit orbit;
-            ChainOrbit builtOrbit;
-            CameraCommandResult result = ValidateView(newTarget, destinationViewName, out view, out orbit, out builtOrbit);
-            if (result != CameraCommandResult.Accepted)
+            using (profilerMarkers.TargetChange.Auto())
             {
-                ReportRejection($"{name}: ChangeTarget '{newTarget.name}' with view '{destinationViewName}' rejected: {result}.");
-                return result;
-            }
+                VehicleViewEntry view;
+                VehicleOrbit orbit;
+                ChainOrbit builtOrbit;
+                CameraCommandResult result = ValidateView(newTarget, destinationViewName, out view, out orbit, out builtOrbit);
+                if (result != CameraCommandResult.Accepted)
+                {
+                    ReportRejection($"{name}: ChangeTarget '{newTarget.name}' with view '{destinationViewName}' rejected: {result}.");
+                    return result;
+                }
 
-            commandId = BeginTargetChange(newTarget, view, orbit, builtOrbit, options, preserveBearing);
-            return CameraCommandResult.Accepted;
+                commandId = BeginTargetChange(newTarget, view, orbit, builtOrbit, options, preserveBearing);
+                return CameraCommandResult.Accepted;
+            }
         }
 
         public void ShiftOrigin(Vector3 offset)
@@ -811,6 +747,83 @@ namespace Gley.CameraSystem
         public bool IsOwnBodyCollider(Collider candidate)
         {
             return ownBodyColliders.Contains(candidate);
+        }
+
+        private CameraCommandResult ActivateCamera(TransitionOptions options, out int commandId)
+        {
+            commandId = 0;
+            if (assignedCamera == null)
+            {
+                ReportRejection($"{name}: Activate rejected: {CameraCommandResult.MissingCamera}.");
+                return CameraCommandResult.MissingCamera;
+            }
+
+            if (!IsTargetConfigured(target))
+            {
+                ReportRejection($"{name}: Activate rejected: {CameraCommandResult.MissingTarget}.");
+                return CameraCommandResult.MissingTarget;
+            }
+
+            CameraSystemController owner;
+            if (TryGetOtherOwner(out owner))
+            {
+                ReportRejection($"{name}: Activate rejected: camera in use. Camera '{assignedCamera.name}' is owned by '{owner.name}'.");
+                return CameraCommandResult.CameraInUse;
+            }
+
+            VehicleViewEntry view;
+            VehicleOrbit orbit;
+            ChainOrbit builtOrbit;
+            Vector3 startPosition = assignedCamera.transform.position;
+            Quaternion startRotation = assignedCamera.transform.rotation;
+            CameraCommandResult result = ValidateView(target, initialViewName, out view, out orbit, out builtOrbit);
+            if (result != CameraCommandResult.Accepted)
+            {
+                ReportRejection($"{name}: Activate of view '{initialViewName}' rejected: {result}.");
+                return result;
+            }
+
+            if (!isActive)
+            {
+                renderingState.RecordBaseline(assignedCamera);
+            }
+
+            viewSwitcher.Stop();
+            EndRunningCommand(CommandEndResult.Replaced);
+            AcquireOwnership();
+            SubscribeToTarget();
+            isActive = true;
+            isTargetLost = false;
+            ApplyView(view, orbit, builtOrbit);
+            rootMotionEstimator.Configure(target, Vector3.zero);
+            WarnAboutRigidbodyInterpolation();
+            if (options.Mode != TransitionMode.Snap)
+            {
+                Vector3 destinationPosition = CalculateTransitionDestination();
+                float easeTime = activeView.Preset.Travel.EaseTime;
+                if (options.Mode == TransitionMode.Duration)
+                {
+                    activationTransition.BeginWithDuration(startPosition, startRotation, destinationPosition, options.Value, easeTime);
+                }
+                else
+                {
+                    float speed = options.Value;
+                    if (options.Mode == TransitionMode.PresetSpeed)
+                    {
+                        speed = activeView.Preset.Travel.StraightLineTransitionSpeed;
+                    }
+
+                    activationTransition.Begin(startPosition, startRotation, destinationPosition, speed, easeTime);
+                }
+
+                commandId = BeginCommand(CommandKind.Activation, options.LockPlayerControl);
+                isTransitioning = true;
+                hasBearingDestination = chainOrbit != null;
+                destinationBearing = view.DefaultPose.Bearing;
+            }
+
+            WriteCameraPose(0f);
+            return CameraCommandResult.Accepted;
         }
 
         private bool IsBlockedByPlayerLock(CommandSource source)
@@ -1259,36 +1272,45 @@ namespace Gley.CameraSystem
 
         private void UpdateCameraFrame(float deltaTime, float scaledDeltaTime)
         {
-            if (!isActive)
+            using (profilerMarkers.UpdateCameraFrame.Auto())
             {
-                return;
-            }
+                if (!isActive)
+                {
+                    return;
+                }
 
-            if (assignedCamera == null)
-            {
-                HandleCameraLost();
-                return;
-            }
+                if (assignedCamera == null)
+                {
+                    HandleCameraLost();
+                    return;
+                }
 
-            if (isTargetLost)
-            {
-                return;
-            }
+                if (isTargetLost)
+                {
+                    return;
+                }
 
-            if (!IsTargetAlive())
-            {
-                HandleTargetLost();
-                return;
-            }
+                if (!IsTargetAlive())
+                {
+                    HandleTargetLost();
+                    return;
+                }
 
-            rootMotionEstimator.UpdateMotionEstimate(scaledDeltaTime);
-            if (IsInteriorView())
-            {
-                seatOffset = seatMotion.UpdateSeatMotion(scaledDeltaTime);
-            }
+                profilerMarkers.MotionEstimation.Begin();
+                rootMotionEstimator.UpdateMotionEstimate(scaledDeltaTime);
+                profilerMarkers.MotionEstimation.End();
+                if (IsInteriorView())
+                {
+                    profilerMarkers.SeatMotion.Begin();
+                    seatOffset = seatMotion.UpdateSeatMotion(scaledDeltaTime);
+                    profilerMarkers.SeatMotion.End();
+                }
 
-            UpdateCommandsAndInput(deltaTime, scaledDeltaTime);
-            WriteCameraPose(deltaTime);
+                profilerMarkers.CommandsAndInput.Begin();
+                UpdateCommandsAndInput(deltaTime, scaledDeltaTime);
+                profilerMarkers.CommandsAndInput.End();
+                WriteCameraPose(deltaTime);
+            }
         }
 
         private float GetScaledDeltaTime(float deltaTime)
@@ -1336,6 +1358,14 @@ namespace Gley.CameraSystem
         }
 
         private void HandleChainChanged()
+        {
+            using (profilerMarkers.OrbitRebuild.Auto())
+            {
+                RebuildAfterChainChange();
+            }
+        }
+
+        private void RebuildAfterChainChange()
         {
             if (!isActive || isTargetLost)
             {
@@ -1747,12 +1777,22 @@ namespace Gley.CameraSystem
 
         private void CalculateCameraPose(float deltaTime, out Vector3 cameraPosition, out Quaternion cameraRotation)
         {
+            profilerMarkers.TargetPose.Begin();
             Vector3 targetPosition = ComputeTargetPose(deltaTime);
+            profilerMarkers.TargetPose.End();
+            profilerMarkers.FollowLag.Begin();
             Vector3 laggedPosition = ApplyFollowLag(targetPosition, deltaTime);
+            profilerMarkers.FollowLag.End();
+            profilerMarkers.Collision.Begin();
             Vector3 correctedPosition = ApplyCollision(laggedPosition, deltaTime);
+            profilerMarkers.Collision.End();
+            profilerMarkers.Aim.Begin();
             Quaternion aim = ComputeAim(correctedPosition);
+            profilerMarkers.Aim.End();
             cameraPosition = correctedPosition;
+            profilerMarkers.AimSmoothing.Begin();
             cameraRotation = ApplyAimSmoothing(aim, deltaTime);
+            profilerMarkers.AimSmoothing.End();
         }
 
         private Vector3 ComputeTargetPose(float deltaTime)
