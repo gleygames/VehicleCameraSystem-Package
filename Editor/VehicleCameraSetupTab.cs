@@ -20,6 +20,8 @@ namespace Gley.CameraSystem.Editor
         private readonly VehicleCameraWindowContext context;
         private readonly ProfileAssetSaver profileSaver;
         private readonly ProfileGenerator generator;
+        private readonly VehicleCameraSetup setup;
+        private readonly ProfileGenerationSettings generationSettings;
         private readonly SerializedObject windowObject;
         private readonly SerializedProperty generationSettingsProperty;
         private readonly IInputSystemInstallation inputSystemInstallation;
@@ -36,19 +38,23 @@ namespace Gley.CameraSystem.Editor
 
         public string Title => "Setup";
 
-        public VehicleCameraSetupTab(VehicleCameraWindowContext windowContext, IInputSystemInstallation installation, ProfileAssetSaver saver, ProfileGenerationSettings generationSettings, SerializedObject serializedWindow, SerializedProperty settingsProperty)
+        public VehicleCameraSetupTab(VehicleCameraWindowContext windowContext, IInputSystemInstallation installation, ProfileAssetSaver saver, VehicleCameraSetup vehicleCameraSetup, ProfileGenerationSettings settings, SerializedObject serializedWindow, SerializedProperty settingsProperty)
         {
             context = windowContext;
             inputSystemInstallation = installation;
             isInputSystemInstalled = installation.IsInstalled;
             profileSaver = saver;
-            generator = new ProfileGenerator(generationSettings);
+            generator = new ProfileGenerator(settings);
+            setup = vehicleCameraSetup;
+            generationSettings = settings;
             windowObject = serializedWindow;
             generationSettingsProperty = settingsProperty;
         }
 
         public void DrawTab()
         {
+            DrawOneStepSetup();
+            EditorGUILayout.Space();
             DrawProfileSummary();
             EditorGUILayout.Space();
             DrawGeneration();
@@ -64,6 +70,60 @@ namespace Gley.CameraSystem.Editor
 
         public void OnSceneGUI(SceneView sceneView)
         {
+        }
+
+        public void SetGeneratorPresets(GeneratorPresets generatorPresets)
+        {
+            drivingPreset = generatorPresets.Driving;
+            presentationPreset = generatorPresets.Presentation;
+            interiorPreset = generatorPresets.Interior;
+            fixedPreset = generatorPresets.Fixed;
+        }
+
+        private void DrawOneStepSetup()
+        {
+            EditorGUILayout.LabelField("One-Step Setup", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Select a vehicle model above, then set up its camera in one step: generates a profile if needed, adds a Vehicle Camera Target and a Camera System Controller.", MessageType.None);
+
+            EditorGUI.BeginDisabledGroup(model == null);
+            if (GUILayout.Button("Set Up Vehicle Camera"))
+            {
+                EditorApplication.delayCall += RunSetup;
+            }
+
+            EditorGUI.EndDisabledGroup();
+        }
+
+        private void RunSetup()
+        {
+            EditorApplication.delayCall -= RunSetup;
+            if (model == null)
+            {
+                return;
+            }
+
+            Camera camera = setup.ResolveCamera();
+            if (camera == null)
+            {
+                return;
+            }
+
+            VehicleCameraSetupResult result = setup.RunInteractive(model.transform, camera, generationSettings, isInputSystemInstalled);
+            string failureMessage = setup.DescribeFailure(result.Status);
+            if (failureMessage != null)
+            {
+                EditorUtility.DisplayDialog("Set Up Vehicle Camera", failureMessage, "OK");
+                return;
+            }
+
+            if (result.Status != VehicleCameraSetupStatus.Accepted)
+            {
+                return;
+            }
+
+            context.SetProfile(result.Profile);
+            SetGeneratorPresets(new DefaultPresetBuilder().LoadShippedPresets());
+            EditorGUIUtility.PingObject(result.Target.gameObject);
         }
 
         private void DrawProfileSummary()

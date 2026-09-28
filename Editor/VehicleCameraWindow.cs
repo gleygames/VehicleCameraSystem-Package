@@ -51,6 +51,8 @@ namespace Gley.CameraSystem.Editor
                 generationSettings = new ProfileGenerationSettings();
             }
 
+            VehicleCameraSetup vehicleCameraSetup = new VehicleCameraSetup(new ProfileGenerator(generationSettings), profileSaver, assetSaver);
+
             if (connectionSelection == null)
             {
                 connectionSelection = new ConnectionChainSelection();
@@ -59,7 +61,7 @@ namespace Gley.CameraSystem.Editor
             serializedWindow = new SerializedObject(this);
 
             tabs.Clear();
-            tabs.Add(new VehicleCameraSetupTab(context, inputSystemInstallation, profileSaver, generationSettings, serializedWindow, serializedWindow.FindProperty(nameof(generationSettings))));
+            tabs.Add(new VehicleCameraSetupTab(context, inputSystemInstallation, profileSaver, vehicleCameraSetup, generationSettings, serializedWindow, serializedWindow.FindProperty(nameof(generationSettings))));
             tabs.Add(new VehicleCameraOrbitsTab(context));
             tabs.Add(new VehicleCameraViewsTab(context));
             tabs.Add(new VehicleCameraConnectionsTab(context, connectionSelection, assetSaver));
@@ -165,6 +167,31 @@ namespace Gley.CameraSystem.Editor
         {
             profile = newProfile;
             context.SetProfile(newProfile);
+        }
+
+        public void ShowSetupTab(VehicleProfile profileToShow)
+        {
+            if (profileToShow != null)
+            {
+                SetProfile(profileToShow);
+            }
+
+            selectedTabIndex = 0;
+            if (tabs.Count > 0)
+            {
+                VehicleCameraSetupTab setupTab = tabs[0] as VehicleCameraSetupTab;
+                if (setupTab != null)
+                {
+                    setupTab.SetGeneratorPresets(new DefaultPresetBuilder().LoadShippedPresets());
+                }
+            }
+
+            if (context != null)
+            {
+                context.MarkIssuesDirty();
+            }
+
+            Repaint();
         }
 
         private void OnFocus()

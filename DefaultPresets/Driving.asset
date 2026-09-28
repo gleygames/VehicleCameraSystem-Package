@@ -1,0 +1,100 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 22287d40e0ada7e4992c96a91417be44, type: 3}
+  m_Name: Driving
+  m_EditorClassIdentifier: 
+  orbitMovement:
+    manualTravelSpeed: 6
+    startResponseHalfLife: 0.06
+    zoomRate: 3
+    heightRate: 2
+    dragOrbit: 20
+    dragHeight: 4
+    pinch: 5
+    minimumBearing: -180
+    maximumBearing: 180
+    imageRollFollow: 0
+    angleLimitsEnabled: 0
+  travel:
+    automaticTravelSpeed: 10
+    straightLineTransitionSpeed: 10
+    easeTime: 0.4
+  driving:
+    followHalfLife: 0.12
+    aimHalfLife: 0.08
+    maximumLag: 3
+    lowSpeed: 5
+    highSpeed: 25
+    maximumSpeedDistanceOffset: 3
+    speedDistanceSideMinimum: 0.25
+    turnLookMaximumOffset: 12
+    turnLookFullTurnRate: 30
+    turnLookHalfLife: 0.4
+    turnLookHintWeight: 0.5
+    speedDistanceEnabled: 1
+    speedDistanceInReverse: 0
+    turnLookEnabled: 1
+  interior:
+    headLimitLeft: 140
+    headLimitRight: 140
+    headLimitUp: 40
+    headLimitDown: 30
+    headLookRate: 120
+    headDrag: 180
+    turnLookMaximumOffset: 20
+    turnLookHalfLife: 0.4
+    turnLookFullTurnRate: 30
+    turnLookHintWeight: 0.5
+    accelerationStrength: 0.02
+    brakingStrength: 0.03
+    corneringStrength: 0.015
+    accelerationCorneringResponse: 0.1
+    cushionCutoff: 1.5
+    cushionGain: 0.5
+    cushionResponse: 0.05
+    turnLookEnabled: 0
+    accelerationBrakingEnabled: 1
+    corneringEnabled: 1
+    cushionEnabled: 1
+  recenter:
+    mode: 1
+    delay: 4
+    returnHalfLife: 0.25
+    stationaryThreshold: 0.5
+  collision:
+    collisionMask:
+      serializedVersion: 2
+      m_Bits: 1
+    cameraRadius: 0.25
+    moveInHalfLife: 0.05
+    easeOutHalfLife: 0.3
+    maximumCasts: 8
+    enabled: 1
+  rendering:
+    cullingMaskMode: 0
+    replaceMask:
+      serializedVersion: 2
+      m_Bits: 0
+    addMask:
+      serializedVersion: 2
+      m_Bits: 0
+    removeMask:
+      serializedVersion: 2
+      m_Bits: 0
+    nearClip: 0.3
+    farClip: 1000
+    overrideNearClip: 0
+    overrideFarClip: 0
+  aimFrame: 0
+  timeSource: 0
+  viewType: 2
+  formatVersion: 1
