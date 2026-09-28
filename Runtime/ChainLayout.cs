@@ -10,28 +10,33 @@ namespace Gley.CameraSystem
         private readonly List<GeneratedOrbitConnectorPair> connectorPairs = new List<GeneratedOrbitConnectorPair>();
         private readonly List<Vector3> offsets = new List<Vector3>();
         private readonly List<VehicleOrbit> orbits = new List<VehicleOrbit>();
+        private readonly List<ClosedBezierOrbit> sourceOrbits = new List<ClosedBezierOrbit>();
         private readonly IReadOnlyList<VehicleProfile> profiles;
         private readonly IReadOnlyList<OrbitConnectorPairOverride> pairOverrides;
         private readonly IReadOnlyList<OrbitConnectorPairOverride> jointOverrides;
+        private readonly IReadOnlyList<Transform> bodyTransforms;
         private readonly VehicleOrbit rootOrbit;
         private readonly int rootIndex;
 
         public IReadOnlyList<GeneratedOrbitConnectorPair> ConnectorPairs => connectorPairs;
         public IReadOnlyList<Vector3> Offsets => offsets;
         public IReadOnlyList<VehicleOrbit> Orbits => orbits;
+        internal IReadOnlyList<ClosedBezierOrbit> SourceOrbits => sourceOrbits;
+        public ChainOrbit Orbit { get; private set; }
         public ChainLayoutResult LayoutResult { get; private set; }
 
-        public ChainLayout(IReadOnlyList<VehicleProfile> profiles, int rootIndex, VehicleOrbit rootOrbit, IReadOnlyList<OrbitConnectorPairOverride> pairOverrides = null, IReadOnlyList<OrbitConnectorPairOverride> jointOverrides = null)
+        public ChainLayout(IReadOnlyList<VehicleProfile> profiles, int rootIndex, VehicleOrbit rootOrbit, IReadOnlyList<OrbitConnectorPairOverride> pairOverrides = null, IReadOnlyList<OrbitConnectorPairOverride> jointOverrides = null, IReadOnlyList<Transform> bodyTransforms = null)
         {
             this.profiles = profiles;
             this.rootIndex = rootIndex;
             this.rootOrbit = rootOrbit;
             this.pairOverrides = pairOverrides;
             this.jointOverrides = jointOverrides;
+            this.bodyTransforms = bodyTransforms;
             Rebuild();
         }
 
-        public List<ChainBody> CreateBodies(IReadOnlyList<Transform> bodyTransforms)
+        public List<ChainBody> CreateBodies(IReadOnlyList<Transform> transforms)
         {
             List<ChainBody> bodies = new List<ChainBody>();
             if (profiles == null || orbits.Count != profiles.Count || offsets.Count != profiles.Count || connectorPairs.Count != profiles.Count - 1)
@@ -42,9 +47,9 @@ namespace Gley.CameraSystem
             for (int index = 0; index < profiles.Count; index++)
             {
                 Transform body = null;
-                if (bodyTransforms != null && index < bodyTransforms.Count)
+                if (transforms != null && index < transforms.Count)
                 {
-                    body = bodyTransforms[index];
+                    body = transforms[index];
                 }
 
                 bodies.Add(new ChainBody(body, profiles[index], orbits[index], offsets[index], index));
@@ -58,6 +63,8 @@ namespace Gley.CameraSystem
             connectorPairs.Clear();
             offsets.Clear();
             orbits.Clear();
+            sourceOrbits.Clear();
+            Orbit = null;
             LayoutResult = ChainLayoutResult.MissingProfile;
             if (profiles == null || profiles.Count == 0 || rootIndex < 0 || rootIndex >= profiles.Count)
             {
@@ -117,6 +124,11 @@ namespace Gley.CameraSystem
                 }
             }
 
+            for (int index = 0; index < orbits.Count; index++)
+            {
+                sourceOrbits.Add(new ClosedBezierOrbit(orbits[index]));
+            }
+
             for (int index = 0; index < profiles.Count - 1; index++)
             {
                 GeneratedOrbitConnectorPair pair;
@@ -129,16 +141,16 @@ namespace Gley.CameraSystem
             }
 
             LayoutResult = ChainLayoutResult.Valid;
-            ChainOrbit assembled = new ChainOrbit(CreateBodies(null), rootIndex, connectorPairs);
-            if (assembled.AssemblyResult == ChainOrbitAssemblyResult.SelfIntersecting)
+            Orbit = new ChainOrbit(CreateBodies(bodyTransforms), rootIndex, connectorPairs, sourceOrbits);
+            if (Orbit.AssemblyResult == ChainOrbitAssemblyResult.SelfIntersecting)
             {
                 LayoutResult = ChainLayoutResult.SelfIntersecting;
             }
-            else if (assembled.AssemblyResult == ChainOrbitAssemblyResult.Disconnected || assembled.AssemblyResult == ChainOrbitAssemblyResult.Degenerate)
+            else if (Orbit.AssemblyResult == ChainOrbitAssemblyResult.Disconnected || Orbit.AssemblyResult == ChainOrbitAssemblyResult.Degenerate)
             {
                 LayoutResult = ChainLayoutResult.Open;
             }
-            else if (assembled.AssemblyResult != ChainOrbitAssemblyResult.Valid)
+            else if (Orbit.AssemblyResult != ChainOrbitAssemblyResult.Valid)
             {
                 LayoutResult = ChainLayoutResult.InvalidConnector;
             }
@@ -181,8 +193,8 @@ namespace Gley.CameraSystem
         private bool TryCreatePair(int index, out GeneratedOrbitConnectorPair pair)
         {
             pair = null;
-            ClosedBezierOrbit frontOrbit = new ClosedBezierOrbit(orbits[index]);
-            ClosedBezierOrbit rearOrbit = new ClosedBezierOrbit(orbits[index + 1]);
+            ClosedBezierOrbit frontOrbit = sourceOrbits[index];
+            ClosedBezierOrbit rearOrbit = sourceOrbits[index + 1];
             if (frontOrbit.ValidationResult != OrbitValidationResult.Valid || rearOrbit.ValidationResult != OrbitValidationResult.Valid
                 || frontOrbit.RemovableSectionValidationResult != OrbitRemovableSectionValidationResult.Valid
                 || rearOrbit.RemovableSectionValidationResult != OrbitRemovableSectionValidationResult.Valid)

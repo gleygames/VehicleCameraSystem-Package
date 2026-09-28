@@ -259,23 +259,26 @@ namespace Gley.CameraSystem
                 return CameraCommandResult.PlayerControlLocked;
             }
 
-            VehicleViewEntry view;
-            VehicleOrbit orbit;
-            ChainOrbit builtOrbit;
-            CameraCommandResult result = ValidateView(target, viewName, out view, out orbit, out builtOrbit);
-            if (result != CameraCommandResult.Accepted)
+            using (profilerMarkers.ViewSwitch.Auto())
             {
-                ReportRejection($"{name}: SelectView '{viewName}' rejected: {result}.");
-                return result;
-            }
+                VehicleViewEntry view;
+                VehicleOrbit orbit;
+                ChainOrbit builtOrbit;
+                CameraCommandResult result = ValidateView(target, viewName, out view, out orbit, out builtOrbit);
+                if (result != CameraCommandResult.Accepted)
+                {
+                    ReportRejection($"{name}: SelectView '{viewName}' rejected: {result}.");
+                    return result;
+                }
 
-            if (activeView.Id == view.Id && !viewSwitcher.IsSwitching)
-            {
+                if (activeView.Id == view.Id && !viewSwitcher.IsSwitching)
+                {
+                    return CameraCommandResult.Accepted;
+                }
+
+                commandId = BeginViewSwitch(view, orbit, builtOrbit, options);
                 return CameraCommandResult.Accepted;
             }
-
-            commandId = BeginViewSwitch(view, orbit, builtOrbit, options);
-            return CameraCommandResult.Accepted;
         }
 
         public CameraCommandResult SetTarget(VehicleCameraTarget newTarget)
@@ -1987,16 +1990,23 @@ namespace Gley.CameraSystem
                     return CameraCommandResult.OrbitNotFound;
                 }
 
-                builtOrbit = chainOrbitBuilder.Build(candidate, orbit.Name);
-                if (!IsOrbitUsable(builtOrbit))
+                if (CanReuseActiveOrbit(candidate, orbit))
                 {
-                    return CameraCommandResult.ViewInvalid;
+                    builtOrbit = chainOrbit;
                 }
-
-                OrbitOffsetRangeValidationResult rangeResult = new ClosedBezierOrbit(orbit).OffsetRangeValidationResult;
-                if (rangeResult != OrbitOffsetRangeValidationResult.Valid && rangeResult != OrbitOffsetRangeValidationResult.InwardZoomExceedsCurvature)
+                else
                 {
-                    return CameraCommandResult.ViewInvalid;
+                    builtOrbit = chainOrbitBuilder.Build(candidate, orbit.Name);
+                    if (!IsOrbitUsable(builtOrbit))
+                    {
+                        return CameraCommandResult.ViewInvalid;
+                    }
+
+                    OrbitOffsetRangeValidationResult rangeResult = GetRangeOrbit(builtOrbit, orbit).OffsetRangeValidationResult;
+                    if (rangeResult != OrbitOffsetRangeValidationResult.Valid && rangeResult != OrbitOffsetRangeValidationResult.InwardZoomExceedsCurvature)
+                    {
+                        return CameraCommandResult.ViewInvalid;
+                    }
                 }
             }
 
@@ -2015,6 +2025,22 @@ namespace Gley.CameraSystem
             }
 
             return CameraCommandResult.Accepted;
+        }
+
+        private bool CanReuseActiveOrbit(VehicleCameraTarget candidate, VehicleOrbit orbit)
+        {
+            return isActive && !isTargetLost && ReferenceEquals(candidate, target) && ReferenceEquals(orbit, activeOrbit) && candidate.ChainVersion == builtChainVersion && IsOrbitUsable(chainOrbit);
+        }
+
+        private ClosedBezierOrbit GetRangeOrbit(ChainOrbit builtOrbit, VehicleOrbit orbit)
+        {
+            ClosedBezierOrbit rootSourceOrbit = builtOrbit.RootSourceOrbit;
+            if (rootSourceOrbit != null && ReferenceEquals(rootSourceOrbit.SourceOrbit, orbit))
+            {
+                return rootSourceOrbit;
+            }
+
+            return new ClosedBezierOrbit(orbit);
         }
 
         private void AcquireOwnership()

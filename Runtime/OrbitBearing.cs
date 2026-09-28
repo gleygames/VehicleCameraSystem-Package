@@ -24,6 +24,12 @@ namespace Gley.CameraSystem
                 return;
             }
 
+            if (positions.Capacity < samplePositions.Count)
+            {
+                positions.Capacity = samplePositions.Count;
+                distances.Capacity = samplePositions.Count;
+            }
+
             float minimumX = float.PositiveInfinity;
             float maximumX = float.NegativeInfinity;
             float minimumZ = float.PositiveInfinity;

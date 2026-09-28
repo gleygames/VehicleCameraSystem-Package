@@ -22,15 +22,46 @@ namespace Gley.CameraSystem
         private readonly VehicleOrbit vehicleOrbit;
         private readonly WatchPointCurve watchPointCurve = new WatchPointCurve();
         private readonly InwardZoomAnalyzer inwardZoomAnalyzer = new InwardZoomAnalyzer();
+        private readonly OrbitSelfIntersectionCheck selfIntersectionCheck = new OrbitSelfIntersectionCheck();
+        private readonly OrbitBearing bearing = new OrbitBearing();
+
+        private OrbitOffsetRangeValidationResult offsetRangeValidationResult;
+        private Quaternion bearingOrientation;
+        private float bearingBaseHeight;
+        private float maximumZoomOffset;
+        private float maximumSafeInwardZoom;
+        private bool isBearingBuilt;
+        private bool isInwardZoomMeasured;
 
         internal VehicleOrbit SourceOrbit => vehicleOrbit;
-        public OrbitBearing Bearing { get; }
-        public OrbitOffsetRangeValidationResult OffsetRangeValidationResult { get; private set; }
+        public OrbitBearing Bearing
+        {
+            get
+            {
+                BuildBearingIfNeeded();
+                return bearing;
+            }
+        }
+        public OrbitOffsetRangeValidationResult OffsetRangeValidationResult
+        {
+            get
+            {
+                MeasureInwardZoomIfNeeded();
+                return offsetRangeValidationResult;
+            }
+        }
         public OrbitWatchMarkerValidationResult WatchMarkerValidationResult { get; private set; }
         public OrbitValidationResult ValidationResult { get; private set; }
         public OrbitRemovableSectionValidationResult RemovableSectionValidationResult { get; private set; }
         public float Length { get; private set; }
-        public float MaximumSafeInwardZoom { get; private set; }
+        public float MaximumSafeInwardZoom
+        {
+            get
+            {
+                MeasureInwardZoomIfNeeded();
+                return maximumSafeInwardZoom;
+            }
+        }
         public float MaximumCornerTurn { get; private set; }
         public int SharpestCornerKnotIndex { get; private set; }
         public bool IsClosed => ValidationResult == OrbitValidationResult.Valid;
@@ -38,7 +69,6 @@ namespace Gley.CameraSystem
         public ClosedBezierOrbit(VehicleOrbit orbit)
         {
             vehicleOrbit = orbit;
-            Bearing = new OrbitBearing();
             Rebuild();
         }
 
@@ -120,13 +150,24 @@ namespace Gley.CameraSystem
             bearingPositions.Clear();
             bearingDistances.Clear();
             Length = 0f;
-            MaximumSafeInwardZoom = float.PositiveInfinity;
+            maximumSafeInwardZoom = float.PositiveInfinity;
             MaximumCornerTurn = 0f;
             SharpestCornerKnotIndex = -1;
-            Bearing.Rebuild(bearingPositions, bearingDistances, Length);
+            isBearingBuilt = false;
+            isInwardZoomMeasured = false;
+            bearingOrientation = Quaternion.identity;
+            bearingBaseHeight = 0f;
+            maximumZoomOffset = 0f;
+            if (vehicleOrbit != null)
+            {
+                bearingOrientation = vehicleOrbit.OrientationAdjustment;
+                bearingBaseHeight = vehicleOrbit.BaseHeight;
+                maximumZoomOffset = vehicleOrbit.MaximumZoomOffset;
+            }
+
             ValidationResult = ValidateOrbit();
             WatchMarkerValidationResult = ValidateWatchMarkers();
-            OffsetRangeValidationResult = ValidateOffsetRanges();
+            offsetRangeValidationResult = ValidateOffsetRanges();
             RemovableSectionValidationResult = ValidateRemovableSections();
 
             if (WatchMarkerValidationResult == OrbitWatchMarkerValidationResult.Valid)
@@ -140,33 +181,61 @@ namespace Gley.CameraSystem
 
             watchPointCurve.Rebuild(watchPointKeys);
 
+            if (ValidationResult == OrbitValidationResult.Valid)
+            {
+                MeasureCornerTurns();
+            }
+
+        }
+
+        private void BuildBearingIfNeeded()
+        {
+            if (isBearingBuilt)
+            {
+                return;
+            }
+
+            isBearingBuilt = true;
+            bearingPositions.Clear();
+            bearingDistances.Clear();
+            if (ValidationResult != OrbitValidationResult.Valid)
+            {
+                bearing.Rebuild(bearingPositions, bearingDistances, 0f);
+                return;
+            }
+
+            if (bearingPositions.Capacity < samples.Count)
+            {
+                bearingPositions.Capacity = samples.Count;
+                bearingDistances.Capacity = samples.Count;
+            }
+
+            for (int sampleIndex = 0; sampleIndex < samples.Count; sampleIndex++)
+            {
+                bearingPositions.Add(bearingOrientation * (samples[sampleIndex].Position + Vector3.up * bearingBaseHeight));
+                bearingDistances.Add(samples[sampleIndex].Distance);
+            }
+
+            bearing.Rebuild(bearingPositions, bearingDistances, Length);
+        }
+
+        private void MeasureInwardZoomIfNeeded()
+        {
+            if (isInwardZoomMeasured)
+            {
+                return;
+            }
+
+            isInwardZoomMeasured = true;
             if (ValidationResult != OrbitValidationResult.Valid)
             {
                 return;
             }
 
-            BuildArcLengthSamples();
-
-            if (Length < MinimumLength)
+            maximumSafeInwardZoom = inwardZoomAnalyzer.MaximumSafeInwardZoom(this);
+            if (offsetRangeValidationResult == OrbitOffsetRangeValidationResult.Valid && maximumZoomOffset > maximumSafeInwardZoom)
             {
-                ValidationResult = OrbitValidationResult.Degenerate;
-                samples.Clear();
-                return;
-            }
-
-            MeasureCornerTurns();
-
-            for (int sampleIndex = 0; sampleIndex < samples.Count; sampleIndex++)
-            {
-                bearingPositions.Add(vehicleOrbit.OrientationAdjustment * (samples[sampleIndex].Position + Vector3.up * vehicleOrbit.BaseHeight));
-                bearingDistances.Add(samples[sampleIndex].Distance);
-            }
-
-            Bearing.Rebuild(bearingPositions, bearingDistances, Length);
-            MaximumSafeInwardZoom = inwardZoomAnalyzer.MaximumSafeInwardZoom(this);
-            if (OffsetRangeValidationResult == OrbitOffsetRangeValidationResult.Valid && vehicleOrbit.MaximumZoomOffset > MaximumSafeInwardZoom)
-            {
-                OffsetRangeValidationResult = OrbitOffsetRangeValidationResult.InwardZoomExceedsCurvature;
+                offsetRangeValidationResult = OrbitOffsetRangeValidationResult.InwardZoomExceedsCurvature;
             }
         }
 
@@ -396,8 +465,6 @@ namespace Gley.CameraSystem
                 return OrbitValidationResult.SelfIntersecting;
             }
 
-            samples.Clear();
-            Length = 0f;
             return OrbitValidationResult.Valid;
         }
 
@@ -429,6 +496,11 @@ namespace Gley.CameraSystem
         {
             samples.Clear();
             Length = 0f;
+            int sampleCount = vehicleOrbit.Knots.Count * SamplesPerSegment + 1;
+            if (samples.Capacity < sampleCount)
+            {
+                samples.Capacity = sampleCount;
+            }
 
             Vector3 firstPosition = EvaluateSegmentPosition(0, 0f);
             samples.Add(new OrbitArcLengthSample(firstPosition, 0f, 0, 0f));
@@ -517,90 +589,19 @@ namespace Gley.CameraSystem
 
         private bool HasSelfIntersection()
         {
-            int segmentCount = samples.Count - 1;
-
-            for (int firstSegmentIndex = 0; firstSegmentIndex < segmentCount; firstSegmentIndex++)
+            selfIntersectionCheck.Clear();
+            selfIntersectionCheck.Reserve(samples.Count);
+            for (int sampleIndex = 0; sampleIndex < samples.Count; sampleIndex++)
             {
-                Vector2 firstStart = ToPlanePosition(samples[firstSegmentIndex].Position);
-                Vector2 firstEnd = ToPlanePosition(samples[firstSegmentIndex + 1].Position);
-
-                for (int secondSegmentIndex = firstSegmentIndex + 1; secondSegmentIndex < segmentCount; secondSegmentIndex++)
-                {
-                    if (secondSegmentIndex == firstSegmentIndex + 1)
-                    {
-                        continue;
-                    }
-
-                    if (firstSegmentIndex == 0 && secondSegmentIndex == segmentCount - 1)
-                    {
-                        continue;
-                    }
-
-                    Vector2 secondStart = ToPlanePosition(samples[secondSegmentIndex].Position);
-                    Vector2 secondEnd = ToPlanePosition(samples[secondSegmentIndex + 1].Position);
-
-                    if (DoSegmentsIntersect(firstStart, firstEnd, secondStart, secondEnd))
-                    {
-                        return true;
-                    }
-                }
+                selfIntersectionCheck.AddPoint(ToPlanePosition(samples[sampleIndex].Position), samples[sampleIndex].SegmentIndex);
             }
 
-            return false;
+            return selfIntersectionCheck.HasSelfIntersection();
         }
 
         private Vector2 ToPlanePosition(Vector3 position)
         {
             return new Vector2(position.x, position.z);
-        }
-
-        private bool DoSegmentsIntersect(Vector2 firstStart, Vector2 firstEnd, Vector2 secondStart, Vector2 secondEnd)
-        {
-            float firstStartSide = CalculateCross(firstStart, firstEnd, secondStart);
-            float firstEndSide = CalculateCross(firstStart, firstEnd, secondEnd);
-            float secondStartSide = CalculateCross(secondStart, secondEnd, firstStart);
-            float secondEndSide = CalculateCross(secondStart, secondEnd, firstEnd);
-
-            if (firstStartSide == 0f && IsPointOnSegment(firstStart, firstEnd, secondStart))
-            {
-                return true;
-            }
-
-            if (firstEndSide == 0f && IsPointOnSegment(firstStart, firstEnd, secondEnd))
-            {
-                return true;
-            }
-
-            if (secondStartSide == 0f && IsPointOnSegment(secondStart, secondEnd, firstStart))
-            {
-                return true;
-            }
-
-            if (secondEndSide == 0f && IsPointOnSegment(secondStart, secondEnd, firstEnd))
-            {
-                return true;
-            }
-
-            bool firstSegmentSeparatesSecondSegment = (firstStartSide > 0f && firstEndSide < 0f) || (firstStartSide < 0f && firstEndSide > 0f);
-            bool secondSegmentSeparatesFirstSegment = (secondStartSide > 0f && secondEndSide < 0f) || (secondStartSide < 0f && secondEndSide > 0f);
-            return firstSegmentSeparatesSecondSegment && secondSegmentSeparatesFirstSegment;
-        }
-
-        private float CalculateCross(Vector2 lineStart, Vector2 lineEnd, Vector2 point)
-        {
-            Vector2 line = lineEnd - lineStart;
-            Vector2 offset = point - lineStart;
-            return line.x * offset.y - line.y * offset.x;
-        }
-
-        private bool IsPointOnSegment(Vector2 segmentStart, Vector2 segmentEnd, Vector2 point)
-        {
-            float minimumX = Mathf.Min(segmentStart.x, segmentEnd.x);
-            float maximumX = Mathf.Max(segmentStart.x, segmentEnd.x);
-            float minimumY = Mathf.Min(segmentStart.y, segmentEnd.y);
-            float maximumY = Mathf.Max(segmentStart.y, segmentEnd.y);
-
-            return point.x >= minimumX && point.x <= maximumX && point.y >= minimumY && point.y <= maximumY;
         }
 
         private Vector3 EvaluateOrbitLocalPosition(float distance)
@@ -617,7 +618,7 @@ namespace Gley.CameraSystem
                 wrappedDistance += Length;
             }
 
-            for (int sampleIndex = 1; sampleIndex < samples.Count; sampleIndex++)
+            for (int sampleIndex = FindFirstSampleAtOrAfter(wrappedDistance); sampleIndex < samples.Count; sampleIndex++)
             {
                 OrbitArcLengthSample previousSample = samples[sampleIndex - 1];
                 OrbitArcLengthSample currentSample = samples[sampleIndex];
@@ -643,6 +644,31 @@ namespace Gley.CameraSystem
             }
 
             return samples[0].Position;
+        }
+
+        private int FindFirstSampleAtOrAfter(float distance)
+        {
+            int low = 1;
+            int high = samples.Count - 1;
+            if (high < low || samples[high].Distance < distance)
+            {
+                return samples.Count;
+            }
+
+            while (low < high)
+            {
+                int middle = (low + high) / 2;
+                if (samples[middle].Distance >= distance)
+                {
+                    high = middle;
+                }
+                else
+                {
+                    low = middle + 1;
+                }
+            }
+
+            return low;
         }
 
         private Vector3 EvaluateSegmentPosition(int segmentIndex, float segmentT)

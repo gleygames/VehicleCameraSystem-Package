@@ -72,14 +72,14 @@ namespace Gley.CameraSystem.Editor
             if (IsMerged)
             {
                 LayoutResult = layout.LayoutResult;
-                orbit = new ChainOrbit(layout, null, RootIndex);
+                orbit = GetAssembledOrbit(layout, RootIndex);
             }
             else
             {
                 VehicleProfile[] rootProfiles = { editedProfile };
                 ChainLayout rootLayout = new ChainLayout(rootProfiles, 0, rootOrbit);
                 LayoutResult = rootLayout.LayoutResult;
-                orbit = new ChainOrbit(rootLayout, null, 0);
+                orbit = GetAssembledOrbit(rootLayout, 0);
             }
 
             BuildStraightArrangement();
@@ -247,6 +247,16 @@ namespace Gley.CameraSystem.Editor
             }
 
             return bodyOrbit;
+        }
+
+        private ChainOrbit GetAssembledOrbit(ChainLayout builtLayout, int rootIndex)
+        {
+            if (builtLayout.Orbit != null)
+            {
+                return builtLayout.Orbit;
+            }
+
+            return new ChainOrbit(builtLayout, null, rootIndex);
         }
 
         private void BuildStraightArrangement()

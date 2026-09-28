@@ -16,6 +16,7 @@ namespace Gley.CameraSystem
         public const string OrbitRebuildName = "VehicleCamera.OrbitRebuild";
         public const string ActivationName = "VehicleCamera.Activation";
         public const string TargetChangeName = "VehicleCamera.TargetChange";
+        public const string ViewSwitchName = "VehicleCamera.ViewSwitch";
 
         public ProfilerMarker UpdateCameraFrame { get; }
         public ProfilerMarker MotionEstimation { get; }
@@ -29,6 +30,7 @@ namespace Gley.CameraSystem
         public ProfilerMarker OrbitRebuild { get; }
         public ProfilerMarker Activation { get; }
         public ProfilerMarker TargetChange { get; }
+        public ProfilerMarker ViewSwitch { get; }
 
         public CameraProfilerMarkers()
         {
@@ -44,6 +46,7 @@ namespace Gley.CameraSystem
             OrbitRebuild = new ProfilerMarker(OrbitRebuildName);
             Activation = new ProfilerMarker(ActivationName);
             TargetChange = new ProfilerMarker(TargetChangeName);
+            ViewSwitch = new ProfilerMarker(ViewSwitchName);
         }
     }
 }

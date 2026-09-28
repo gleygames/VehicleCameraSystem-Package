@@ -7,6 +7,11 @@ namespace Gley.CameraSystem
     {
         public ChainOrbit Build(VehicleCameraTarget target, string rootOrbitName)
         {
+            return BuildOrbit(target, rootOrbitName);
+        }
+
+        private ChainOrbit BuildOrbit(VehicleCameraTarget target, string rootOrbitName)
+        {
             if (target == null || target.BodyCount == 0 || !target.IsRootAlive)
             {
                 return null;
@@ -23,8 +28,8 @@ namespace Gley.CameraSystem
             {
                 VehicleProfile[] rootProfiles = { target.GetProfile(rootIndex) };
                 Transform[] rootBodies = { target.GetBody(rootIndex) };
-                ChainLayout rootLayout = new ChainLayout(rootProfiles, 0, rootOrbit);
-                return new ChainOrbit(rootLayout, rootBodies, 0);
+                ChainLayout rootLayout = new ChainLayout(rootProfiles, 0, rootOrbit, null, null, rootBodies);
+                return GetAssembledOrbit(rootLayout, rootBodies, 0);
             }
 
             List<VehicleProfile> profiles = new List<VehicleProfile>(target.BodyCount);
@@ -40,7 +45,17 @@ namespace Gley.CameraSystem
                 }
             }
 
-            ChainLayout layout = new ChainLayout(profiles, rootIndex, rootOrbit, null, overrides);
+            ChainLayout layout = new ChainLayout(profiles, rootIndex, rootOrbit, null, overrides, bodies);
+            return GetAssembledOrbit(layout, bodies, rootIndex);
+        }
+
+        private ChainOrbit GetAssembledOrbit(ChainLayout layout, IReadOnlyList<Transform> bodies, int rootIndex)
+        {
+            if (layout.Orbit != null)
+            {
+                return layout.Orbit;
+            }
+
             return new ChainOrbit(layout, bodies, rootIndex);
         }
     }

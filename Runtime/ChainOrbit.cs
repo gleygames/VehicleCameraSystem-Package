@@ -15,6 +15,7 @@ namespace Gley.CameraSystem
         private readonly List<RetainedLeadSegmentMapping> retainedLeadSegmentMappings = new List<RetainedLeadSegmentMapping>();
         private readonly List<AssembledOrbitSegmentSource> segmentSources = new List<AssembledOrbitSegmentSource>();
         private readonly List<AssembledBezierOrbitSegment> segments = new List<AssembledBezierOrbitSegment>();
+        private readonly List<List<OrbitSourceSegment>> bodySourceSegments = new List<List<OrbitSourceSegment>>();
         private readonly List<ClosedBezierOrbit> sourceOrbits = new List<ClosedBezierOrbit>();
         private readonly List<VehicleOrbit> bodyOrbits = new List<VehicleOrbit>();
         private readonly List<MergedMarker> mergedMarkers = new List<MergedMarker>();
@@ -27,6 +28,7 @@ namespace Gley.CameraSystem
         private readonly IReadOnlyList<Vector3> bodyOffsets;
         private readonly WatchPointCurve watchPointCurve = new WatchPointCurve();
         private readonly OrbitBearing bearing = new OrbitBearing();
+        private readonly OrbitSelfIntersectionCheck selfIntersectionCheck = new OrbitSelfIntersectionCheck();
         private readonly int rootIndex;
 
         private float leadOrbitLength;
@@ -36,6 +38,18 @@ namespace Gley.CameraSystem
         public IReadOnlyList<AssembledBezierOrbitSegment> Segments => segments;
         public IReadOnlyList<MergedMarker> MergedMarkers => mergedMarkers;
         public OrbitBearing Bearing => bearing;
+        internal ClosedBezierOrbit RootSourceOrbit
+        {
+            get
+            {
+                if (rootIndex < 0 || rootIndex >= sourceOrbits.Count)
+                {
+                    return null;
+                }
+
+                return sourceOrbits[rootIndex];
+            }
+        }
 
         public ChainOrbitAssemblyResult AssemblyResult { get; private set; }
         public float Length { get; private set; }
@@ -43,6 +57,16 @@ namespace Gley.CameraSystem
         public bool IsClosed => AssemblyResult == ChainOrbitAssemblyResult.Valid;
 
         public ChainOrbit(IReadOnlyList<ChainBody> chainBodies, int rootIndex, IReadOnlyList<GeneratedOrbitConnectorPair> generatedConnectorPairs)
+            : this(chainBodies, rootIndex, generatedConnectorPairs, null)
+        {
+        }
+
+        public ChainOrbit(ChainLayout layout, IReadOnlyList<Transform> bodyTransforms, int rootIndex)
+            : this(layout.CreateBodies(bodyTransforms), rootIndex, layout.ConnectorPairs, layout.SourceOrbits)
+        {
+        }
+
+        internal ChainOrbit(IReadOnlyList<ChainBody> chainBodies, int rootIndex, IReadOnlyList<GeneratedOrbitConnectorPair> generatedConnectorPairs, IReadOnlyList<ClosedBezierOrbit> builtSourceOrbits)
         {
             bodies = chainBodies;
             this.rootIndex = rootIndex;
@@ -59,12 +83,12 @@ namespace Gley.CameraSystem
             }
 
             bodyOffsets = offsets;
-            Rebuild();
-        }
+            if (!TryUseSourceOrbits(builtSourceOrbits))
+            {
+                CreateSourceOrbits();
+            }
 
-        public ChainOrbit(ChainLayout layout, IReadOnlyList<Transform> bodyTransforms, int rootIndex)
-            : this(layout.CreateBodies(bodyTransforms), rootIndex, layout.ConnectorPairs)
-        {
+            Assemble();
         }
 
         public Vector3 EvaluateLeadBodyLocalPosition(float distance)
@@ -298,6 +322,34 @@ namespace Gley.CameraSystem
         public void Rebuild()
         {
             CreateSourceOrbits();
+            Assemble();
+        }
+
+        private bool TryUseSourceOrbits(IReadOnlyList<ClosedBezierOrbit> builtSourceOrbits)
+        {
+            sourceOrbits.Clear();
+            if (builtSourceOrbits == null || builtSourceOrbits.Count != bodyOrbits.Count)
+            {
+                return false;
+            }
+
+            for (int index = 0; index < builtSourceOrbits.Count; index++)
+            {
+                ClosedBezierOrbit sourceOrbit = builtSourceOrbits[index];
+                if (sourceOrbit == null || bodyProfiles[index] == null || !ReferenceEquals(sourceOrbit.SourceOrbit, bodyOrbits[index]))
+                {
+                    sourceOrbits.Clear();
+                    return false;
+                }
+
+                sourceOrbits.Add(sourceOrbit);
+            }
+
+            return true;
+        }
+
+        private void Assemble()
+        {
             samples.Clear();
             retainedLeadSegmentMappings.Clear();
             segmentSources.Clear();
@@ -310,10 +362,16 @@ namespace Gley.CameraSystem
             signedArea = 0f;
             AssemblyResult = ChainOrbitAssemblyResult.NotAssembled;
 
+            bodySourceSegments.Clear();
             if (!HasValidInputs())
             {
                 AssemblyResult = ChainOrbitAssemblyResult.ConnectorGenerationFailed;
                 return;
+            }
+
+            for (int bodyIndex = 0; bodyIndex < bodyOrbits.Count; bodyIndex++)
+            {
+                bodySourceSegments.Add(CreateSourceSegments(bodyIndex));
             }
 
             if (bodyProfiles.Count == 1)
@@ -350,13 +408,15 @@ namespace Gley.CameraSystem
                 }
             }
 
-            if (!AreSegmentEndpointsConnected())
+            bool isConnected = AreSegmentEndpointsConnected();
+            if (!isConnected)
             {
                 AssemblyResult = ChainOrbitAssemblyResult.Disconnected;
                 return;
             }
 
-            if (!AreSegmentsPlanar())
+            bool isPlanar = AreSegmentsPlanar();
+            if (!isPlanar)
             {
                 AssemblyResult = ChainOrbitAssemblyResult.NonPlanar;
                 return;
@@ -371,7 +431,8 @@ namespace Gley.CameraSystem
                 return;
             }
 
-            if (HasSelfIntersection())
+            bool isSelfIntersecting = HasSelfIntersection();
+            if (isSelfIntersecting)
             {
                 AssemblyResult = ChainOrbitAssemblyResult.SelfIntersecting;
                 return;
@@ -465,6 +526,12 @@ namespace Gley.CameraSystem
         {
             bearingPositions.Clear();
             bearingDistances.Clear();
+            if (bearingPositions.Capacity < samples.Count)
+            {
+                bearingPositions.Capacity = samples.Count;
+                bearingDistances.Capacity = samples.Count;
+            }
+
             for (int sampleIndex = 0; sampleIndex < samples.Count; sampleIndex++)
             {
                 bearingPositions.Add(samples[sampleIndex].Position);
@@ -643,7 +710,7 @@ namespace Gley.CameraSystem
 
         private void AddRetainedInterval(int bodyIndex, float startDistance, float endDistance, bool isLeadBody)
         {
-            List<OrbitSourceSegment> sourceSegments = CreateSourceSegments(bodyIndex);
+            List<OrbitSourceSegment> sourceSegments = bodySourceSegments[bodyIndex];
             float sourceLength = GetSourceLength(sourceSegments);
             startDistance = SnapToSegmentBoundary(sourceSegments, startDistance);
             endDistance = SnapToSegmentBoundary(sourceSegments, endDistance);
@@ -708,7 +775,7 @@ namespace Gley.CameraSystem
         {
             VehicleOrbit vehicleOrbit = bodyOrbits[bodyIndex];
             Vector3 positionOffset = bodyOffsets[bodyIndex] + vehicleOrbit.OrientationAdjustment * (Vector3.up * vehicleOrbit.BaseHeight);
-            List<OrbitSourceSegment> sourceSegments = new List<OrbitSourceSegment>();
+            List<OrbitSourceSegment> sourceSegments = new List<OrbitSourceSegment>(vehicleOrbit.Knots.Count);
             float startDistance = 0f;
 
             for (int segmentIndex = 0; segmentIndex < vehicleOrbit.Knots.Count; segmentIndex++)
@@ -724,8 +791,9 @@ namespace Gley.CameraSystem
                 BezierOrbitKnot endKnot = vehicleOrbit.Knots[nextKnotIndex];
                 Quaternion orientationAdjustment = vehicleOrbit.OrientationAdjustment;
                 AssembledBezierOrbitSegment segment = new AssembledBezierOrbitSegment(orientationAdjustment * startKnot.Anchor + positionOffset, orientationAdjustment * startKnot.OutgoingControlPoint + positionOffset, orientationAdjustment * endKnot.IncomingControlPoint + positionOffset, orientationAdjustment * endKnot.Anchor + positionOffset);
-                float segmentLength = GetSegmentLength(segment);
-                sourceSegments.Add(new OrbitSourceSegment(segment, startDistance, startDistance + segmentLength));
+                float[] sampleDistances = CreateSampleDistances(segment);
+                float segmentLength = sampleDistances[SamplesPerSegment];
+                sourceSegments.Add(new OrbitSourceSegment(segment, startDistance, startDistance + segmentLength, sampleDistances));
                 startDistance += segmentLength;
             }
 
@@ -788,23 +856,18 @@ namespace Gley.CameraSystem
                 return 1f;
             }
 
-            float previousDistance = 0f;
-            Vector3 previousPosition = sourceSegment.Segment.EvaluatePosition(0f);
-
+            float[] sampleDistances = sourceSegment.SampleDistances;
             for (int sampleIndex = 1; sampleIndex <= SamplesPerSegment; sampleIndex++)
             {
-                float currentT = (float)sampleIndex / SamplesPerSegment;
-                Vector3 currentPosition = sourceSegment.Segment.EvaluatePosition(currentT);
-                float currentDistance = previousDistance + Vector3.Distance(previousPosition, currentPosition);
+                float currentDistance = sampleDistances[sampleIndex];
 
                 if (distance <= currentDistance)
                 {
+                    float previousDistance = sampleDistances[sampleIndex - 1];
+                    float currentT = (float)sampleIndex / SamplesPerSegment;
                     float previousT = (float)(sampleIndex - 1) / SamplesPerSegment;
                     return Mathf.Lerp(previousT, currentT, (distance - previousDistance) / (currentDistance - previousDistance));
                 }
-
-                previousDistance = currentDistance;
-                previousPosition = currentPosition;
             }
 
             return 1f;
@@ -824,24 +887,18 @@ namespace Gley.CameraSystem
                 return segmentLength;
             }
 
-            float previousDistance = 0f;
+            float[] sampleDistances = sourceSegment.SampleDistances;
             float previousT = 0f;
-            Vector3 previousPosition = sourceSegment.Segment.EvaluatePosition(0f);
-
             for (int sampleIndex = 1; sampleIndex <= SamplesPerSegment; sampleIndex++)
             {
                 float currentT = (float)sampleIndex / SamplesPerSegment;
-                Vector3 currentPosition = sourceSegment.Segment.EvaluatePosition(currentT);
-                float currentDistance = previousDistance + Vector3.Distance(previousPosition, currentPosition);
 
                 if (segmentT <= currentT)
                 {
-                    return Mathf.Lerp(previousDistance, currentDistance, (segmentT - previousT) / (currentT - previousT));
+                    return Mathf.Lerp(sampleDistances[sampleIndex - 1], sampleDistances[sampleIndex], (segmentT - previousT) / (currentT - previousT));
                 }
 
-                previousDistance = currentDistance;
                 previousT = currentT;
-                previousPosition = currentPosition;
             }
 
             return segmentLength;
@@ -918,6 +975,12 @@ namespace Gley.CameraSystem
         {
             samples.Clear();
             Length = 0f;
+            int sampleCount = segments.Count * SamplesPerSegment + 1;
+            if (samples.Capacity < sampleCount)
+            {
+                samples.Capacity = sampleCount;
+            }
+
             samples.Add(new OrbitArcLengthSample(segments[0].StartPosition, 0f, 0, 0f));
 
             for (int segmentIndex = 0; segmentIndex < segments.Count; segmentIndex++)
@@ -938,10 +1001,21 @@ namespace Gley.CameraSystem
 
         private float GetAssembledSegmentDistance(int assembledSegmentIndex, float assembledSegmentT)
         {
-            float previousDistance = 0f;
+            if (samples.Count == 0)
+            {
+                return 0f;
+            }
+
+            int firstSampleIndex = assembledSegmentIndex * SamplesPerSegment + 1;
+            if (firstSampleIndex < 1 || firstSampleIndex >= samples.Count || samples[firstSampleIndex].SegmentIndex != assembledSegmentIndex)
+            {
+                firstSampleIndex = 1;
+            }
+
+            float previousDistance = samples[firstSampleIndex - 1].Distance;
             float previousT = 0f;
 
-            for (int sampleIndex = 1; sampleIndex < samples.Count; sampleIndex++)
+            for (int sampleIndex = firstSampleIndex; sampleIndex < samples.Count; sampleIndex++)
             {
                 OrbitArcLengthSample currentSample = samples[sampleIndex];
 
@@ -961,8 +1035,9 @@ namespace Gley.CameraSystem
             return 0f;
         }
 
-        private float GetSegmentLength(AssembledBezierOrbitSegment segment)
+        private float[] CreateSampleDistances(AssembledBezierOrbitSegment segment)
         {
+            float[] sampleDistances = new float[SamplesPerSegment + 1];
             float length = 0f;
             Vector3 previousPosition = segment.EvaluatePosition(0f);
 
@@ -971,10 +1046,11 @@ namespace Gley.CameraSystem
                 float segmentT = (float)sampleIndex / SamplesPerSegment;
                 Vector3 currentPosition = segment.EvaluatePosition(segmentT);
                 length += Vector3.Distance(previousPosition, currentPosition);
+                sampleDistances[sampleIndex] = length;
                 previousPosition = currentPosition;
             }
 
-            return length;
+            return sampleDistances;
         }
 
         private float CalculateSignedArea()
@@ -993,84 +1069,19 @@ namespace Gley.CameraSystem
 
         private bool HasSelfIntersection()
         {
-            int segmentCount = samples.Count - 1;
-
-            for (int firstSegmentIndex = 0; firstSegmentIndex < segmentCount; firstSegmentIndex++)
+            selfIntersectionCheck.Clear();
+            selfIntersectionCheck.Reserve(samples.Count);
+            for (int sampleIndex = 0; sampleIndex < samples.Count; sampleIndex++)
             {
-                Vector2 firstStart = ToPlanePosition(samples[firstSegmentIndex].Position);
-                Vector2 firstEnd = ToPlanePosition(samples[firstSegmentIndex + 1].Position);
-
-                for (int secondSegmentIndex = firstSegmentIndex + 1; secondSegmentIndex < segmentCount; secondSegmentIndex++)
-                {
-                    if (secondSegmentIndex == firstSegmentIndex + 1 || firstSegmentIndex == 0 && secondSegmentIndex == segmentCount - 1)
-                    {
-                        continue;
-                    }
-
-                    Vector2 secondStart = ToPlanePosition(samples[secondSegmentIndex].Position);
-                    Vector2 secondEnd = ToPlanePosition(samples[secondSegmentIndex + 1].Position);
-
-                    if (DoSegmentsIntersect(firstStart, firstEnd, secondStart, secondEnd))
-                    {
-                        return true;
-                    }
-                }
+                selfIntersectionCheck.AddPoint(ToPlanePosition(samples[sampleIndex].Position), samples[sampleIndex].SegmentIndex);
             }
 
-            return false;
+            return selfIntersectionCheck.HasSelfIntersection();
         }
 
         private Vector2 ToPlanePosition(Vector3 position)
         {
             return new Vector2(position.x, position.z);
-        }
-
-        private bool DoSegmentsIntersect(Vector2 firstStart, Vector2 firstEnd, Vector2 secondStart, Vector2 secondEnd)
-        {
-            float firstStartSide = CalculateCross(firstStart, firstEnd, secondStart);
-            float firstEndSide = CalculateCross(firstStart, firstEnd, secondEnd);
-            float secondStartSide = CalculateCross(secondStart, secondEnd, firstStart);
-            float secondEndSide = CalculateCross(secondStart, secondEnd, firstEnd);
-
-            if (firstStartSide == 0f && IsPointOnSegment(firstStart, firstEnd, secondStart))
-            {
-                return true;
-            }
-
-            if (firstEndSide == 0f && IsPointOnSegment(firstStart, firstEnd, secondEnd))
-            {
-                return true;
-            }
-
-            if (secondStartSide == 0f && IsPointOnSegment(secondStart, secondEnd, firstStart))
-            {
-                return true;
-            }
-
-            if (secondEndSide == 0f && IsPointOnSegment(secondStart, secondEnd, firstEnd))
-            {
-                return true;
-            }
-
-            bool firstSegmentSeparatesSecondSegment = firstStartSide > 0f && firstEndSide < 0f || firstStartSide < 0f && firstEndSide > 0f;
-            bool secondSegmentSeparatesFirstSegment = secondStartSide > 0f && secondEndSide < 0f || secondStartSide < 0f && secondEndSide > 0f;
-            return firstSegmentSeparatesSecondSegment && secondSegmentSeparatesFirstSegment;
-        }
-
-        private float CalculateCross(Vector2 lineStart, Vector2 lineEnd, Vector2 point)
-        {
-            Vector2 line = lineEnd - lineStart;
-            Vector2 offset = point - lineStart;
-            return line.x * offset.y - line.y * offset.x;
-        }
-
-        private bool IsPointOnSegment(Vector2 segmentStart, Vector2 segmentEnd, Vector2 point)
-        {
-            float minimumX = Mathf.Min(segmentStart.x, segmentEnd.x);
-            float maximumX = Mathf.Max(segmentStart.x, segmentEnd.x);
-            float minimumY = Mathf.Min(segmentStart.y, segmentEnd.y);
-            float maximumY = Mathf.Max(segmentStart.y, segmentEnd.y);
-            return point.x >= minimumX && point.x <= maximumX && point.y >= minimumY && point.y <= maximumY;
         }
     }
 }
