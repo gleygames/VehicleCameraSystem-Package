@@ -76,7 +76,7 @@ namespace Gley.CameraSystem.Editor
             return "The vehicle camera could not be set up.";
         }
 
-        public VehicleCameraSetupResult RunInteractive(Transform vehicleRoot, Camera camera, ProfileGenerationSettings generationSettings, bool isInputSystemInstalled)
+        public VehicleCameraSetupResult RunInteractive(Transform vehicleRoot, Camera camera, ProfileGenerationSettings generationSettings, bool isInputSystemInstalled, bool addTouchButtons = false)
         {
             if (vehicleRoot == null)
             {
@@ -100,10 +100,10 @@ namespace Gley.CameraSystem.Editor
             }
 
             GeneratorPresets defaultPresets = new DefaultPresetBuilder().LoadShippedPresets();
-            return Run(vehicleRoot, camera, defaultPresets, generationSettings, savePath, isInputSystemInstalled);
+            return Run(vehicleRoot, camera, defaultPresets, generationSettings, savePath, isInputSystemInstalled, addTouchButtons);
         }
 
-        public VehicleCameraSetupResult Run(Transform vehicleRoot, Camera camera, GeneratorPresets defaultPresets, ProfileGenerationSettings generationSettings, string newProfileSavePath, bool isInputSystemInstalled)
+        public VehicleCameraSetupResult Run(Transform vehicleRoot, Camera camera, GeneratorPresets defaultPresets, ProfileGenerationSettings generationSettings, string newProfileSavePath, bool isInputSystemInstalled, bool addTouchButtons = false)
         {
             if (vehicleRoot == null)
             {
@@ -119,10 +119,24 @@ namespace Gley.CameraSystem.Editor
             int undoGroup = Undo.GetCurrentGroup();
             Undo.SetCurrentGroupName("Set Up Vehicle Camera");
 
-            VehicleCameraSetupResult result = RunSteps(vehicleRoot, camera, defaultPresets, newProfileSavePath, isInputSystemInstalled);
+            VehicleCameraSetupResult result = RunSteps(vehicleRoot, camera, defaultPresets, newProfileSavePath, isInputSystemInstalled, addTouchButtons);
 
             Undo.CollapseUndoOperations(undoGroup);
             return result;
+        }
+
+        public Canvas FindCanvas()
+        {
+            Canvas[] canvases = Object.FindObjectsByType<Canvas>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            for (int index = 0; index < canvases.Length; index++)
+            {
+                if (canvases[index].isRootCanvas && canvases[index].gameObject.scene.IsValid())
+                {
+                    return canvases[index];
+                }
+            }
+
+            return null;
         }
 
         public VehicleCameraTarget FindExistingTarget(Transform vehicleRoot)
@@ -140,7 +154,7 @@ namespace Gley.CameraSystem.Editor
             return null;
         }
 
-        private VehicleCameraSetupResult RunSteps(Transform vehicleRoot, Camera camera, GeneratorPresets defaultPresets, string newProfileSavePath, bool isInputSystemInstalled)
+        private VehicleCameraSetupResult RunSteps(Transform vehicleRoot, Camera camera, GeneratorPresets defaultPresets, string newProfileSavePath, bool isInputSystemInstalled, bool addTouchButtons)
         {
             VehicleCameraTarget target = FindExistingTarget(vehicleRoot);
             VehicleProfile profile = null;
@@ -186,6 +200,14 @@ namespace Gley.CameraSystem.Editor
             if (isInputSystemInstalled && InputCompanionInstaller != null)
             {
                 InputCompanionInstaller.InstallInputCompanion(camera.gameObject, controller);
+                if (addTouchButtons)
+                {
+                    Canvas canvas = FindCanvas();
+                    if (canvas != null)
+                    {
+                        InputCompanionInstaller.InstallTouchButtons(camera.gameObject, canvas);
+                    }
+                }
             }
 
             return new VehicleCameraSetupResult(VehicleCameraSetupStatus.Accepted, profile, target, controller, generatedProfile, createdTarget, createdController, isInputSystemInstalled);
@@ -283,7 +305,14 @@ namespace Gley.CameraSystem.Editor
                 return;
             }
 
-            VehicleCameraSetupResult result = setup.RunInteractive(selectedVehicle.transform, camera, new ProfileGenerationSettings(), new InputSystemInstallation().IsInstalled);
+            bool isInputSystemInstalled = new InputSystemInstallation().IsInstalled;
+            bool addTouchButtons = false;
+            if (isInputSystemInstalled && setup.FindCanvas() != null)
+            {
+                addTouchButtons = EditorUtility.DisplayDialog("Add Touch Buttons", "Add touch buttons to the scene Canvas?", "Add Touch Buttons", "Skip");
+            }
+
+            VehicleCameraSetupResult result = setup.RunInteractive(selectedVehicle.transform, camera, new ProfileGenerationSettings(), isInputSystemInstalled, addTouchButtons);
             string failureMessage = setup.DescribeFailure(result.Status);
             if (failureMessage != null)
             {

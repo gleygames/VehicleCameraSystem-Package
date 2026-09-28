@@ -5,7 +5,8 @@
         "Gley.CameraSystem",
         "Gley.CameraSystem.Editor",
         "Gley.CameraSystem.Input",
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "Unity.ugui"
     ],
     "includePlatforms": [
         "Editor"

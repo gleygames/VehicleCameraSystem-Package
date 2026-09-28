@@ -33,6 +33,7 @@ namespace Gley.CameraSystem.Editor
         private CameraViewPreset fixedPreset;
         private string installStatus;
         private bool isInputSystemInstalled;
+        private bool addTouchButtons;
         private bool areRenderersExpanded;
         private bool areCollidersExpanded;
 
@@ -85,6 +86,15 @@ namespace Gley.CameraSystem.Editor
             EditorGUILayout.LabelField("One-Step Setup", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Select a vehicle model above, then set up its camera in one step: generates a profile if needed, adds a Vehicle Camera Target and a Camera System Controller.", MessageType.None);
 
+            if (isInputSystemInstalled && setup.FindCanvas() != null)
+            {
+                addTouchButtons = EditorGUILayout.Toggle("Add touch buttons", addTouchButtons);
+            }
+            else
+            {
+                addTouchButtons = false;
+            }
+
             EditorGUI.BeginDisabledGroup(model == null);
             if (GUILayout.Button("Set Up Vehicle Camera"))
             {
@@ -108,7 +118,7 @@ namespace Gley.CameraSystem.Editor
                 return;
             }
 
-            VehicleCameraSetupResult result = setup.RunInteractive(model.transform, camera, generationSettings, isInputSystemInstalled);
+            VehicleCameraSetupResult result = setup.RunInteractive(model.transform, camera, generationSettings, isInputSystemInstalled, addTouchButtons);
             string failureMessage = setup.DescribeFailure(result.Status);
             if (failureMessage != null)
             {

@@ -116,6 +116,42 @@ namespace Gley.CameraSystem.Input
             DiscardGestures();
         }
 
+        public CameraCommandResult IssueButtonCommand(CameraButtonAction action)
+        {
+            if (cameraController == null)
+            {
+                return CameraCommandResult.NotActive;
+            }
+
+            int commandId;
+            if (action == CameraButtonAction.NextView)
+            {
+                return SelectNextView();
+            }
+
+            if (action == CameraButtonAction.OrbitReset)
+            {
+                return cameraController.OrbitReset(CommandSource.Player, out commandId);
+            }
+
+            if (action == CameraButtonAction.FullReset)
+            {
+                return cameraController.FullReset(CommandSource.Player, out commandId);
+            }
+
+            if (action == CameraButtonAction.NextPoint)
+            {
+                return cameraController.RequestNextPoint(true, new TravelRequest(TravelDirection.Shortest), CommandSource.Player, out commandId);
+            }
+
+            if (action == CameraButtonAction.PreviousPoint)
+            {
+                return cameraController.RequestPreviousPoint(true, new TravelRequest(TravelDirection.Shortest), CommandSource.Player, out commandId);
+            }
+
+            return CameraCommandResult.NotSupportedInView;
+        }
+
         private void BindActions()
         {
             InputActionAsset source = actions;
@@ -454,23 +490,23 @@ namespace Gley.CameraSystem.Input
             cameraController.RequestPreviousPoint(true, new TravelRequest(TravelDirection.Shortest), CommandSource.Player, out commandId);
         }
 
-        private void SelectNextView()
+        private CameraCommandResult SelectNextView()
         {
             if (cameraController == null || cameraController.Target == null)
             {
-                return;
+                return CameraCommandResult.NotActive;
             }
 
             VehicleProfile profile = cameraController.Target.GetProfile(cameraController.Target.RootIndex);
             if (profile == null)
             {
-                return;
+                return CameraCommandResult.NotActive;
             }
 
             IReadOnlyList<VehicleViewEntry> views = profile.Views;
             if (views.Count == 0)
             {
-                return;
+                return CameraCommandResult.NotActive;
             }
 
             VehicleViewEntry activeView = cameraController.ActiveView;
@@ -487,7 +523,7 @@ namespace Gley.CameraSystem.Input
                 }
             }
 
-            cameraController.SelectView(views[nextIndex].Name, CommandSource.Player);
+            return cameraController.SelectView(views[nextIndex].Name, CommandSource.Player);
         }
 
         private void Reset()
