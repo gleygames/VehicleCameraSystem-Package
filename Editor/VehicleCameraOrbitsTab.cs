@@ -7,8 +7,17 @@ namespace Gley.CameraSystem.Editor
     public class VehicleCameraOrbitsTab : IVehicleCameraTab
     {
         private const string DefaultOrbitName = "Orbit";
+        private const float EditInSceneButtonWidth = 100f;
 
+        private readonly List<WatchMarkerListView> markerLists = new List<WatchMarkerListView>();
         private readonly VehicleCameraWindowContext context;
+        private readonly OrbitEditOperations operations;
+        private readonly HandleDragUndo dragUndo;
+        private readonly OrbitPreviewCache previewCache;
+        private readonly OrbitCurveHandles curveHandles;
+        private readonly RemovableSectionHandles sectionHandles;
+        private readonly WatchMarkerHandles markerHandles;
+        private readonly EnvelopeHandles envelopeHandles;
 
         private int pendingRemovalOrbitId;
 
@@ -17,6 +26,13 @@ namespace Gley.CameraSystem.Editor
         public VehicleCameraOrbitsTab(VehicleCameraWindowContext windowContext)
         {
             context = windowContext;
+            operations = new OrbitEditOperations();
+            dragUndo = new HandleDragUndo(context);
+            previewCache = new OrbitPreviewCache(operations);
+            curveHandles = new OrbitCurveHandles(operations, dragUndo, context.SceneHandles);
+            sectionHandles = new RemovableSectionHandles(operations, dragUndo);
+            markerHandles = new WatchMarkerHandles(operations, dragUndo, context.SceneHandles);
+            envelopeHandles = new EnvelopeHandles(operations, dragUndo);
         }
 
         public void DrawTab()
@@ -30,6 +46,9 @@ namespace Gley.CameraSystem.Editor
             }
 
             pendingRemovalOrbitId = 0;
+            context.SceneHandles.DrawPreviewRootField();
+            EditorGUILayout.HelpBox("Scene view: drag knots on the orbit plane; select a knot to show its tangents (mirrored; hold Alt while dragging to break the mirror); Shift-click the curve to add a knot; Ctrl-click (Cmd on Mac) a knot to delete it. Drag markers along the curve and select one to move its watch point.", MessageType.None);
+            EnsureSelectedOrbit(profile);
 
             for (int orbitIndex = 0; orbitIndex < profile.Orbits.Count; orbitIndex++)
             {
@@ -63,12 +82,68 @@ namespace Gley.CameraSystem.Editor
 
         public void OnSceneGUI(SceneView sceneView)
         {
+            VehicleProfile profile = context.Profile;
+            if (profile == null)
+            {
+                return;
+            }
+
+            VehicleOrbit orbit = GetSelectedOrbit(profile);
+            if (orbit == null)
+            {
+                return;
+            }
+
+            dragUndo.ReleaseFinishedDrag();
+            previewCache.Refresh(orbit, context.ProfileRevision, false);
+            Matrix4x4 previousMatrix = Handles.matrix;
+            Color previousColor = Handles.color;
+            Handles.matrix = context.SceneHandles.GetPreviewMatrix();
+
+            if (!curveHandles.DrawCurveHandles(orbit, previewCache, sceneView))
+            {
+                envelopeHandles.DrawEnvelope(previewCache);
+                sectionHandles.DrawSectionHandles(orbit, previewCache);
+                markerHandles.DrawMarkerHandles(orbit, previewCache, sceneView);
+                envelopeHandles.DrawRangeHandles(orbit, previewCache);
+            }
+
+            Handles.matrix = previousMatrix;
+            Handles.color = previousColor;
+        }
+
+        private void EnsureSelectedOrbit(VehicleProfile profile)
+        {
+            VehicleOrbit orbit = GetSelectedOrbit(profile);
+            if (orbit != null)
+            {
+                context.SceneHandles.SelectOrbit(orbit.Id);
+            }
+        }
+
+        private VehicleOrbit GetSelectedOrbit(VehicleProfile profile)
+        {
+            if (profile.TryGetOrbit(context.SceneHandles.SelectedOrbitId, out VehicleOrbit selectedOrbit) && selectedOrbit != null)
+            {
+                return selectedOrbit;
+            }
+
+            return profile.PrimaryOrbit;
         }
 
         private void DrawOrbit(VehicleOrbit orbit)
         {
             context.BeginItem(orbit.Id);
+            EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("Orbit", EditorStyles.boldLabel);
+            bool isSelected = context.SceneHandles.SelectedOrbitId == orbit.Id;
+            bool shouldSelect = GUILayout.Toggle(isSelected, "Edit in Scene", "Button", GUILayout.Width(EditInSceneButtonWidth));
+            if (shouldSelect && !isSelected)
+            {
+                context.SceneHandles.SelectOrbit(orbit.Id);
+            }
+
+            EditorGUILayout.EndHorizontal();
 
             if (context.DrawNameField(orbit.Name, out string newName))
             {
@@ -110,42 +185,22 @@ namespace Gley.CameraSystem.Editor
 
         private void DrawMarkers(VehicleOrbit orbit)
         {
-            EditorGUILayout.LabelField("Watch markers", orbit.WatchMarkers.Count.ToString());
-            EditorGUI.indentLevel++;
+            GetMarkerList(orbit.Id).DrawMarkerList(orbit);
+        }
 
-            for (int markerIndex = 0; markerIndex < orbit.WatchMarkers.Count; markerIndex++)
+        private WatchMarkerListView GetMarkerList(int orbitId)
+        {
+            for (int index = 0; index < markerLists.Count; index++)
             {
-                OrbitWatchMarker marker = orbit.WatchMarkers[markerIndex];
-                if (marker != null)
+                if (markerLists[index].OrbitId == orbitId)
                 {
-                    DrawMarker(marker);
+                    return markerLists[index];
                 }
             }
 
-            EditorGUI.indentLevel--;
-        }
-
-        private void DrawMarker(OrbitWatchMarker marker)
-        {
-            context.BeginItem(marker.Id);
-
-            if (context.DrawNameField(marker.Name, out string newName))
-            {
-                string oldName = marker.Name;
-                context.RecordProfileChange("Rename Watch Marker");
-                marker.Rename(newName);
-                context.CompleteRename(marker.Id, oldName);
-            }
-
-            context.DrawRenameNotice(marker.Id);
-            EditorGUILayout.LabelField("Orbit position", $"{marker.NormalizedOrbitPosition:0.###}");
-
-            if (marker.IsPointOfInterest)
-            {
-                EditorGUILayout.LabelField("Point of interest", "Yes");
-            }
-
-            context.EndItem();
+            WatchMarkerListView markerList = new WatchMarkerListView(orbitId, context, operations);
+            markerLists.Add(markerList);
+            return markerList;
         }
 
         private string GetUniqueOrbitName(VehicleProfile profile)

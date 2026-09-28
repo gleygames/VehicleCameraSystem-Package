@@ -10,6 +10,7 @@ namespace Gley.CameraSystem.Editor
         private const int MainTabCount = 3;
         private const int ConnectionsTabIndex = 3;
         private const float NewProfileButtonWidth = 100f;
+        private const float SceneHandlesButtonWidth = 110f;
 
         private readonly List<List<EditorIssue>> tabIssues = new List<List<EditorIssue>>();
         private readonly GUIContent[] mainTabContents = new GUIContent[MainTabCount];
@@ -24,6 +25,7 @@ namespace Gley.CameraSystem.Editor
         private ProfileAssetSaver profileSaver;
         private SerializedObject serializedWindow;
         [SerializeField] private int selectedTabIndex;
+        private int seenSelectionVersion;
         [SerializeField] private bool isAdvancedExpanded;
 
         [MenuItem(VehicleCameraWindowProperties.MenuItem, false, 10)]
@@ -114,13 +116,25 @@ namespace Gley.CameraSystem.Editor
         {
             context.HandleUndoRedo();
             Repaint();
+            SceneView.RepaintAll();
         }
 
         private void HandleSceneGUI(SceneView sceneView)
         {
+            if (!context.SceneHandles.IsDrawingEnabled)
+            {
+                return;
+            }
+
             if (selectedTabIndex >= 0 && selectedTabIndex < tabs.Count)
             {
                 tabs[selectedTabIndex].OnSceneGUI(sceneView);
+            }
+
+            if (seenSelectionVersion != context.SceneHandles.SelectionVersion)
+            {
+                seenSelectionVersion = context.SceneHandles.SelectionVersion;
+                Repaint();
             }
         }
 
@@ -195,6 +209,11 @@ namespace Gley.CameraSystem.Editor
             EditorGUILayout.Space();
             tabs[selectedTabIndex].DrawTab();
             EditorGUILayout.EndScrollView();
+
+            if (GUI.changed)
+            {
+                SceneView.RepaintAll();
+            }
         }
 
         private void CollectIssues()
@@ -222,6 +241,9 @@ namespace Gley.CameraSystem.Editor
             {
                 EditorApplication.delayCall += CreateNewProfile;
             }
+
+            bool isDrawingEnabled = GUILayout.Toggle(context.SceneHandles.IsDrawingEnabled, "Scene Handles", "Button", GUILayout.Width(SceneHandlesButtonWidth));
+            context.SceneHandles.SetDrawingEnabled(isDrawingEnabled);
 
             EditorGUILayout.EndHorizontal();
         }

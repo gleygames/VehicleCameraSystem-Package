@@ -121,6 +121,10 @@ namespace Gley.CameraSystem.Editor
             {
                 model = newModel;
                 CollectModelComponents();
+                if (model != null && model.scene.IsValid())
+                {
+                    context.SceneHandles.SetPreviewRoot(model.transform);
+                }
             }
 
             if (model == null)

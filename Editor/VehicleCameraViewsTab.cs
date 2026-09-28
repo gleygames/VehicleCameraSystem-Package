@@ -7,8 +7,15 @@ namespace Gley.CameraSystem.Editor
     public class VehicleCameraViewsTab : IVehicleCameraTab
     {
         private const string DefaultViewName = "View";
+        private const float ShowInSceneButtonWidth = 110f;
 
         private readonly VehicleCameraWindowContext context;
+        private readonly OrbitEditOperations operations;
+        private readonly HandleDragUndo dragUndo;
+        private readonly OrbitPreviewCache previewCache;
+        private readonly OrbitCurveHandles curveHandles;
+        private readonly EnvelopeHandles envelopeHandles;
+        private readonly SeatHandles seatHandles;
 
         private int pendingRemovalViewId;
 
@@ -17,6 +24,12 @@ namespace Gley.CameraSystem.Editor
         public VehicleCameraViewsTab(VehicleCameraWindowContext windowContext)
         {
             context = windowContext;
+            operations = new OrbitEditOperations();
+            dragUndo = new HandleDragUndo(context);
+            previewCache = new OrbitPreviewCache(operations);
+            curveHandles = new OrbitCurveHandles(operations, dragUndo, context.SceneHandles);
+            envelopeHandles = new EnvelopeHandles(operations, dragUndo);
+            seatHandles = new SeatHandles(dragUndo);
         }
 
         public void DrawTab()
@@ -30,6 +43,8 @@ namespace Gley.CameraSystem.Editor
             }
 
             pendingRemovalViewId = 0;
+            context.SceneHandles.DrawPreviewRootField();
+            EnsureSelectedView(profile);
 
             for (int viewIndex = 0; viewIndex < profile.Views.Count; viewIndex++)
             {
@@ -69,12 +84,84 @@ namespace Gley.CameraSystem.Editor
 
         public void OnSceneGUI(SceneView sceneView)
         {
+            VehicleProfile profile = context.Profile;
+            if (profile == null)
+            {
+                return;
+            }
+
+            VehicleViewEntry view = GetSelectedView(profile);
+            if (view == null || view.Preset == null)
+            {
+                return;
+            }
+
+            dragUndo.ReleaseFinishedDrag();
+            Matrix4x4 previousMatrix = Handles.matrix;
+            Color previousColor = Handles.color;
+            Handles.matrix = context.SceneHandles.GetPreviewMatrix();
+            CameraViewType viewType = view.Preset.ViewType;
+
+            if (viewType == CameraViewType.Fixed)
+            {
+                seatHandles.DrawFixedPoseHandles(profile);
+            }
+            else if (viewType == CameraViewType.Interior)
+            {
+                seatHandles.DrawSeatHandles(profile);
+            }
+            else if (profile.TryGetOrbit(view.OrbitId, out VehicleOrbit orbit) && orbit != null)
+            {
+                previewCache.Refresh(orbit, context.ProfileRevision, true);
+                curveHandles.DrawCurve(previewCache);
+                envelopeHandles.DrawEnvelope(previewCache);
+                envelopeHandles.DrawDefaultPoseHandles(view, orbit, previewCache);
+            }
+
+            Handles.matrix = previousMatrix;
+            Handles.color = previousColor;
+        }
+
+        private void EnsureSelectedView(VehicleProfile profile)
+        {
+            VehicleViewEntry view = GetSelectedView(profile);
+            if (view != null)
+            {
+                context.SceneHandles.SelectView(view.Id);
+            }
+        }
+
+        private VehicleViewEntry GetSelectedView(VehicleProfile profile)
+        {
+            if (profile.TryGetView(context.SceneHandles.SelectedViewId, out VehicleViewEntry selectedView) && selectedView != null)
+            {
+                return selectedView;
+            }
+
+            for (int index = 0; index < profile.Views.Count; index++)
+            {
+                if (profile.Views[index] != null)
+                {
+                    return profile.Views[index];
+                }
+            }
+
+            return null;
         }
 
         private void DrawView(VehicleProfile profile, VehicleViewEntry view)
         {
             context.BeginItem(view.Id);
+            EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("View", EditorStyles.boldLabel);
+            bool isSelected = context.SceneHandles.SelectedViewId == view.Id;
+            bool shouldSelect = GUILayout.Toggle(isSelected, "Show in Scene", "Button", GUILayout.Width(ShowInSceneButtonWidth));
+            if (shouldSelect && !isSelected)
+            {
+                context.SceneHandles.SelectView(view.Id);
+            }
+
+            EditorGUILayout.EndHorizontal();
 
             if (context.DrawNameField(view.Name, out string newName))
             {
@@ -113,13 +200,13 @@ namespace Gley.CameraSystem.Editor
 
             if (viewType == CameraViewType.Fixed)
             {
-                EditorGUILayout.LabelField("Uses the profile's fixed camera pose.");
+                EditorGUILayout.LabelField("Uses the profile's fixed camera pose (edit it in the Scene view).");
                 return;
             }
 
             if (viewType == CameraViewType.Interior)
             {
-                EditorGUILayout.LabelField("Uses the profile's seat.");
+                EditorGUILayout.LabelField("Uses the profile's seat (edit the eye and envelope in the Scene view).");
                 return;
             }
 

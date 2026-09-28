@@ -41,5 +41,10 @@ namespace Gley.CameraSystem
             normalizedOrbitPosition = orbitPosition;
             watchPointLocalPosition = watchPointPosition;
         }
+
+        public void ConfigurePointOfInterest(bool pointOfInterest)
+        {
+            isPointOfInterest = pointOfInterest;
+        }
     }
 }

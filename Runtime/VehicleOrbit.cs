@@ -78,6 +78,20 @@ namespace Gley.CameraSystem
             watchMarkers.Add(marker);
         }
 
+        public bool RemoveWatchMarker(int markerId)
+        {
+            for (int index = 0; index < watchMarkers.Count; index++)
+            {
+                if (watchMarkers[index] != null && watchMarkers[index].Id == markerId)
+                {
+                    watchMarkers.RemoveAt(index);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public void ConfigureBaseHeight(float height)
         {
             baseHeight = height;

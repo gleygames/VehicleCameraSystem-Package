@@ -10,12 +10,15 @@ namespace Gley.CameraSystem.Editor
 
         public VehicleProfile Profile { get; private set; }
         public VehicleCameraValidationCollector Collector { get; }
+        public SceneHandleState SceneHandles { get; }
         public int SelectedItemId { get; private set; }
+        public int ProfileRevision { get; private set; }
         public bool AreIssuesDirty { get; private set; }
 
         public VehicleCameraWindowContext(VehicleCameraValidationCollector collector)
         {
             Collector = collector;
+            SceneHandles = new SceneHandleState();
             AreIssuesDirty = true;
         }
 
@@ -28,6 +31,7 @@ namespace Gley.CameraSystem.Editor
 
             Profile = profile;
             SelectedItemId = 0;
+            SceneHandles.ClearSelection();
             renameNotice.Clear();
             MarkIssuesDirty();
         }
@@ -133,6 +137,7 @@ namespace Gley.CameraSystem.Editor
         public void MarkIssuesDirty()
         {
             AreIssuesDirty = true;
+            ProfileRevision++;
         }
 
         public void ClearIssuesDirty()
