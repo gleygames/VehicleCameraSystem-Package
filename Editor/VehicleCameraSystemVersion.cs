@@ -1,5 +1,3 @@
-using Gley.Common.Editor;
-
 namespace Gley.CameraSystem.Editor
 {
     public class VehicleCameraSystemVersion : IVersion

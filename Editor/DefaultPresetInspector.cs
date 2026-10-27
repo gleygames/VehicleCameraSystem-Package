@@ -12,7 +12,7 @@ namespace Gley.CameraSystem.Editor
         {
             if (duplicator == null)
             {
-                duplicator = new DefaultPresetDuplicator(new VehicleCameraAssetSaver(new VehicleCameraWindowProperties()));
+                duplicator = new DefaultPresetDuplicator(new VehicleCameraAssetSaver());
             }
 
             CameraViewPreset preset = (CameraViewPreset)target;

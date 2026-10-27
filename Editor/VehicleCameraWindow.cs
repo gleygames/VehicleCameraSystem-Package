@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Gley.Common.Editor;
 using UnityEditor;
 using UnityEngine;
 
@@ -32,19 +31,20 @@ namespace Gley.CameraSystem.Editor
         [MenuItem(VehicleCameraWindowProperties.MenuItem, false, 10)]
         private static void OpenWindow()
         {
-            WindowLoader.LoadWindow<VehicleCameraWindow>(new VehicleCameraWindowProperties(), new VehicleCameraSystemVersion(), out string _);
+            GetWindow<VehicleCameraWindow>();
         }
 
         private void OnEnable()
         {
             VehicleCameraWindowProperties properties = new VehicleCameraWindowProperties();
             titleContent = new GUIContent(properties.WindowName + new VehicleCameraSystemVersion().LongVersion);
+            minSize = new Vector2(properties.MinWidth, properties.MinHeight);
 
             IInputSystemInstallation inputSystemInstallation = new InputSystemInstallation();
             context = new VehicleCameraWindowContext(new VehicleCameraValidationCollector(inputSystemInstallation));
             context.SetProfile(profile);
             validationPanel = new VehicleCameraValidationPanel(context);
-            VehicleCameraAssetSaver assetSaver = new VehicleCameraAssetSaver(properties);
+            VehicleCameraAssetSaver assetSaver = new VehicleCameraAssetSaver();
             profileSaver = new ProfileAssetSaver(assetSaver);
             if (generationSettings == null)
             {

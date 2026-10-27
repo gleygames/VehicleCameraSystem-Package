@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Gley.Common.Editor;
 using UnityEditor;
 using UnityEngine;
 
@@ -24,6 +23,7 @@ namespace Gley.CameraSystem.Editor
         private readonly ProfileGenerationSettings generationSettings;
         private readonly SerializedObject windowObject;
         private readonly SerializedProperty generationSettingsProperty;
+        private readonly PackageInstaller packageInstaller = new PackageInstaller();
         private readonly IInputSystemInstallation inputSystemInstallation;
 
         private GameObject model;
@@ -536,7 +536,7 @@ namespace Gley.CameraSystem.Editor
             if (GUILayout.Button("Install"))
             {
                 installStatus = "Requested";
-                ImportRequiredPackages.ImportPackage(InputSystemInstallation.PackageName, UpdateInstallStatus);
+                packageInstaller.Install(InputSystemInstallation.PackageName, UpdateInstallStatus);
             }
 
             if (!string.IsNullOrEmpty(installStatus))

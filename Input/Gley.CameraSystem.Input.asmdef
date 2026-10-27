@@ -3,7 +3,6 @@
     "rootNamespace": "Gley.CameraSystem.Input",
     "references": [
         "Gley.CameraSystem",
-        "Gley.Common",
         "Unity.InputSystem",
         "Unity.ugui"
     ],

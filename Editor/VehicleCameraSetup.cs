@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Gley.Common.Editor;
 using UnityEditor;
 using UnityEngine;
 
@@ -296,7 +295,7 @@ namespace Gley.CameraSystem.Editor
                 return;
             }
 
-            VehicleCameraAssetSaver menuAssetSaver = new VehicleCameraAssetSaver(new VehicleCameraWindowProperties());
+            VehicleCameraAssetSaver menuAssetSaver = new VehicleCameraAssetSaver();
             VehicleCameraSetup setup = new VehicleCameraSetup(new ProfileGenerator(new ProfileGenerationSettings()), new ProfileAssetSaver(menuAssetSaver), menuAssetSaver);
 
             Camera camera = setup.ResolveCamera();
@@ -319,7 +318,7 @@ namespace Gley.CameraSystem.Editor
                 EditorUtility.DisplayDialog("Set Up Vehicle Camera", failureMessage, "OK");
             }
 
-            VehicleCameraWindow window = WindowLoader.LoadWindow<VehicleCameraWindow>(new VehicleCameraWindowProperties(), new VehicleCameraSystemVersion(), out string _);
+            VehicleCameraWindow window = EditorWindow.GetWindow<VehicleCameraWindow>();
             window.ShowSetupTab(result.Profile);
         }
     }

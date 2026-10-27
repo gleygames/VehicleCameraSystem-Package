@@ -1,6 +1,6 @@
 using System;
-using Gley.Common.Editor;
 using UnityEditor;
+using UnityEditor.Compilation;
 
 namespace Gley.CameraSystem.Editor
 {
@@ -9,11 +9,11 @@ namespace Gley.CameraSystem.Editor
         public const string ProfilesFolder = "Assets/VehicleCameraSystemData/Profiles";
         public const string LastFolderKey = "Gley.VehicleCameraSystem.LastSaveFolder";
 
-        private readonly ISettingsWindowProperties windowProperties;
+        private readonly string packageFolder;
 
-        public VehicleCameraAssetSaver(ISettingsWindowProperties properties)
+        public VehicleCameraAssetSaver()
         {
-            windowProperties = properties;
+            packageFolder = FindPackageFolder();
         }
 
         public string RequestSavePath(string title, string defaultName, string suggestedFolder)
@@ -41,7 +41,6 @@ namespace Gley.CameraSystem.Editor
 
         public bool IsInsidePackageFolder(string assetPath)
         {
-            string packageFolder = WindowLoader.GetRootFolder(windowProperties);
             if (string.IsNullOrEmpty(packageFolder) || string.IsNullOrEmpty(assetPath))
             {
                 return false;
@@ -61,6 +60,17 @@ namespace Gley.CameraSystem.Editor
 
             CreateFolder(suggestedFolder);
             return suggestedFolder;
+        }
+
+        private string FindPackageFolder()
+        {
+            string asmdefPath = CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyName(typeof(VehicleCameraAssetSaver).Assembly.GetName().Name);
+            if (string.IsNullOrEmpty(asmdefPath))
+            {
+                return null;
+            }
+
+            return GetFolder(GetFolder(asmdefPath));
         }
 
         private void CreateFolder(string folder)
