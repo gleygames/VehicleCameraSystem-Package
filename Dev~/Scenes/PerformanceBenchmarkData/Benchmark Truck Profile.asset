@@ -1,0 +1,209 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c9f1544181a9c3b49a3fd9e4c7bb2d78, type: 3}
+  m_Name: Benchmark Truck Profile
+  m_EditorClassIdentifier: 
+  orbits:
+  - knots:
+    - anchor: {x: 2.65, y: 0, z: -0.049999714}
+      incomingControlPoint: {x: 2.65, y: 0, z: 1.2916671}
+      outgoingControlPoint: {x: 2.65, y: 0, z: -1.3916664}
+    - anchor: {x: 2.65, y: 0, z: -4.075}
+      incomingControlPoint: {x: 2.65, y: 0, z: -2.733333}
+      outgoingControlPoint: {x: 2.65, y: 0, z: -4.8067775}
+    - anchor: {x: 1.325, y: 0, z: -5.4}
+      incomingControlPoint: {x: 2.0567775, y: 0, z: -5.4}
+      outgoingControlPoint: {x: 0.44166666, y: 0, z: -5.4}
+    - anchor: {x: -1.325, y: 0, z: -5.4}
+      incomingControlPoint: {x: -0.44166666, y: 0, z: -5.4}
+      outgoingControlPoint: {x: -2.0567775, y: 0, z: -5.4}
+    - anchor: {x: -2.65, y: 0, z: -4.075}
+      incomingControlPoint: {x: -2.65, y: 0, z: -4.8067775}
+      outgoingControlPoint: {x: -2.65, y: 0, z: -1.3916664}
+    - anchor: {x: -2.65, y: 0, z: 3.9750006}
+      incomingControlPoint: {x: -2.65, y: 0, z: 1.2916672}
+      outgoingControlPoint: {x: -2.65, y: 0, z: 4.706778}
+    - anchor: {x: -1.325, y: 0, z: 5.3000007}
+      incomingControlPoint: {x: -2.0567775, y: 0, z: 5.3000007}
+      outgoingControlPoint: {x: -0.44166666, y: 0, z: 5.3000007}
+    - anchor: {x: 1.325, y: 0, z: 5.3000007}
+      incomingControlPoint: {x: 0.44166666, y: 0, z: 5.3000007}
+      outgoingControlPoint: {x: 2.0567775, y: 0, z: 5.3000007}
+    - anchor: {x: 2.65, y: 0, z: 3.9750006}
+      incomingControlPoint: {x: 2.65, y: 0, z: 4.706778}
+      outgoingControlPoint: {x: 2.65, y: 0, z: 2.6333337}
+    watchMarkers:
+    - watchPointLocalPosition: {x: 0, y: 1.8499998, z: 4.3000007}
+      name: Right
+      normalizedOrbitPosition: 0
+      id: 3
+      isPointOfInterest: 0
+    - watchPointLocalPosition: {x: 0, y: 2.653608, z: 14.300001}
+      name: Rear
+      normalizedOrbitPosition: 0.24999964
+      id: 4
+      isPointOfInterest: 0
+    - watchPointLocalPosition: {x: 0, y: 1.8499998, z: 4.3000007}
+      name: Left
+      normalizedOrbitPosition: 0.49999902
+      id: 5
+      isPointOfInterest: 0
+    - watchPointLocalPosition: {x: 0, y: 1.8499998, z: -0.049999714}
+      name: Front
+      normalizedOrbitPosition: 0.749999
+      id: 6
+      isPointOfInterest: 0
+    frontRemovableSection:
+      normalizedEndPosition: 0.8704819
+      normalizedStartPosition: 0.6295181
+    rearRemovableSection:
+      normalizedEndPosition: 0.37048194
+      normalizedStartPosition: 0.12951806
+    orientationAdjustment: {x: 0, y: 0, z: 0, w: 1}
+    name: Driving
+    baseHeight: 1.8499998
+    minimumHeightOffset: -1
+    maximumHeightOffset: 5.85
+    minimumZoomOffset: -4
+    maximumZoomOffset: 2
+    id: 1
+    mergeWhenAttached: 1
+  - knots:
+    - anchor: {x: 2.65, y: 0, z: -0.049999714}
+      incomingControlPoint: {x: 2.65, y: 0, z: 1.2916671}
+      outgoingControlPoint: {x: 2.65, y: 0, z: -1.3916664}
+    - anchor: {x: 2.65, y: 0, z: -4.075}
+      incomingControlPoint: {x: 2.65, y: 0, z: -2.733333}
+      outgoingControlPoint: {x: 2.65, y: 0, z: -4.8067775}
+    - anchor: {x: 1.325, y: 0, z: -5.4}
+      incomingControlPoint: {x: 2.0567775, y: 0, z: -5.4}
+      outgoingControlPoint: {x: 0.44166666, y: 0, z: -5.4}
+    - anchor: {x: -1.325, y: 0, z: -5.4}
+      incomingControlPoint: {x: -0.44166666, y: 0, z: -5.4}
+      outgoingControlPoint: {x: -2.0567775, y: 0, z: -5.4}
+    - anchor: {x: -2.65, y: 0, z: -4.075}
+      incomingControlPoint: {x: -2.65, y: 0, z: -4.8067775}
+      outgoingControlPoint: {x: -2.65, y: 0, z: -1.3916664}
+    - anchor: {x: -2.65, y: 0, z: 3.9750006}
+      incomingControlPoint: {x: -2.65, y: 0, z: 1.2916672}
+      outgoingControlPoint: {x: -2.65, y: 0, z: 4.706778}
+    - anchor: {x: -1.325, y: 0, z: 5.3000007}
+      incomingControlPoint: {x: -2.0567775, y: 0, z: 5.3000007}
+      outgoingControlPoint: {x: -0.44166666, y: 0, z: 5.3000007}
+    - anchor: {x: 1.325, y: 0, z: 5.3000007}
+      incomingControlPoint: {x: 0.44166666, y: 0, z: 5.3000007}
+      outgoingControlPoint: {x: 2.0567775, y: 0, z: 5.3000007}
+    - anchor: {x: 2.65, y: 0, z: 3.9750006}
+      incomingControlPoint: {x: 2.65, y: 0, z: 4.706778}
+      outgoingControlPoint: {x: 2.65, y: 0, z: 2.6333337}
+    watchMarkers:
+    - watchPointLocalPosition: {x: 0, y: 1.8499998, z: -0.049999714}
+      name: Centre
+      normalizedOrbitPosition: 0.24999964
+      id: 7
+      isPointOfInterest: 0
+    - watchPointLocalPosition: {x: 1.3, y: 1.5, z: 2.5}
+      name: Right Door
+      normalizedOrbitPosition: 0.05
+      id: 12
+      isPointOfInterest: 1
+    - watchPointLocalPosition: {x: -1.3, y: 1.5, z: -1}
+      name: Left Cargo
+      normalizedOrbitPosition: 0.45
+      id: 13
+      isPointOfInterest: 1
+    - watchPointLocalPosition: {x: -1.3, y: 1.5, z: 2.5}
+      name: Left Door
+      normalizedOrbitPosition: 0.55
+      id: 14
+      isPointOfInterest: 1
+    - watchPointLocalPosition: {x: 1.3, y: 1.5, z: -1}
+      name: Right Cargo
+      normalizedOrbitPosition: 0.95
+      id: 15
+      isPointOfInterest: 1
+    frontRemovableSection:
+      normalizedEndPosition: 0.8704819
+      normalizedStartPosition: 0.6295181
+    rearRemovableSection:
+      normalizedEndPosition: 0.37048194
+      normalizedStartPosition: 0.12951806
+    orientationAdjustment: {x: 0, y: 0, z: 0, w: 1}
+    name: Presentation
+    baseHeight: 1.8499998
+    minimumHeightOffset: -1
+    maximumHeightOffset: 5.85
+    minimumZoomOffset: -4
+    maximumZoomOffset: 2
+    id: 2
+    mergeWhenAttached: 1
+  views:
+  - preset: {fileID: 11400000, guid: 37028cd481068c74dba6c9b38a0f3c49, type: 2}
+    defaultPose:
+      bearing: 0
+      zoomOffset: 0
+      heightOffset: 3.85
+    frontDefaultPose:
+      bearing: 180
+      zoomOffset: 0
+      heightOffset: 3.85
+    name: Driving
+    id: 8
+    orbitId: 1
+  - preset: {fileID: 11400000, guid: 8beea9fcf79810542827ac1108b684e6, type: 2}
+    defaultPose:
+      bearing: 0
+      zoomOffset: 0
+      heightOffset: 0
+    frontDefaultPose:
+      bearing: 180
+      zoomOffset: 0
+      heightOffset: 0
+    name: Presentation
+    id: 9
+    orbitId: 2
+  - preset: {fileID: 11400000, guid: 96f021e4cbb82af4c8636b1629769314, type: 2}
+    defaultPose:
+      bearing: 0
+      zoomOffset: 0
+      heightOffset: 0
+    frontDefaultPose:
+      bearing: 180
+      zoomOffset: 0
+      heightOffset: 0
+    name: Interior
+    id: 10
+    orbitId: 1
+  - preset: {fileID: 11400000, guid: fc335780a7e5b554dbb959a76c422a1d, type: 2}
+    defaultPose:
+      bearing: 0
+      zoomOffset: 0
+      heightOffset: 0
+    frontDefaultPose:
+      bearing: 180
+      zoomOffset: 0
+      heightOffset: 0
+    name: Fixed
+    id: 11
+    orbitId: 1
+  connectorAnchors:
+    frontLocalPosition: {x: 0, y: 1.8499998, z: 4.3000007}
+    rearLocalPosition: {x: 0, y: 1.8499998, z: -4.4}
+  fixedViewPose:
+    cameraLocalPosition: {x: 0, y: 5.85, z: -6.0499997}
+    watchPointLocalPosition: {x: 0, y: 1.8499998, z: -0.049999714}
+  seat:
+    eyeLocalPosition: {x: 0, y: 2.7749996, z: 2.1250005}
+    envelopeHalfExtents: {x: 0.06, y: 0.04, z: 0.08}
+  profileId: c3115b1a-f0e8-47ff-a0d9-c647962ef101
+  formatVersion: 1
+  nextStableId: 16

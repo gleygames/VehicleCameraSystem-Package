@@ -1,0 +1,16 @@
+{
+    "name": "Gley.CameraSystem.Dev",
+    "rootNamespace": "Gley.CameraSystem.Dev",
+    "references": [
+        "Gley.CameraSystem"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,33 @@
+{
+    "name": "Gley.CameraSystem.Input.Runtime.Tests",
+    "rootNamespace": "Gley.CameraSystem.Tests.Input",
+    "references": [
+        "Gley.CameraSystem",
+        "Gley.CameraSystem.Input",
+        "Unity.InputSystem",
+        "Unity.InputSystem.TestFramework",
+        "Unity.ugui",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS",
+        "GLEY_CAMERA_SYSTEM_INPUT_SYSTEM"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.inputsystem",
+            "expression": "1.0.0",
+            "define": "GLEY_CAMERA_SYSTEM_INPUT_SYSTEM"
+        }
+    ],
+    "noEngineReferences": false
+}
