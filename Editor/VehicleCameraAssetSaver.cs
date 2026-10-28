@@ -1,6 +1,5 @@
 using System;
 using UnityEditor;
-using UnityEditor.Compilation;
 
 namespace Gley.CameraSystem.Editor
 {
@@ -13,7 +12,7 @@ namespace Gley.CameraSystem.Editor
 
         public VehicleCameraAssetSaver()
         {
-            packageFolder = FindPackageFolder();
+            packageFolder = new VehicleCameraPackageLocator().PackageRoot();
         }
 
         public string RequestSavePath(string title, string defaultName, string suggestedFolder)
@@ -60,17 +59,6 @@ namespace Gley.CameraSystem.Editor
 
             CreateFolder(suggestedFolder);
             return suggestedFolder;
-        }
-
-        private string FindPackageFolder()
-        {
-            string asmdefPath = CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyName(typeof(VehicleCameraAssetSaver).Assembly.GetName().Name);
-            if (string.IsNullOrEmpty(asmdefPath))
-            {
-                return null;
-            }
-
-            return GetFolder(GetFolder(asmdefPath));
         }
 
         private void CreateFolder(string folder)

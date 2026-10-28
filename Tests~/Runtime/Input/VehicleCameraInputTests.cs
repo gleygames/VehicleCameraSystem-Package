@@ -9,7 +9,7 @@ namespace Gley.CameraSystem.Tests.Input
 {
     public class VehicleCameraInputTests : InputTestFixture
     {
-        private const string ActionsPath = "Assets/Gley/VehicleCameraSystem/Input/VehicleCameraInputActions.inputactions";
+        private const string ActionsPath = "Input/VehicleCameraInputActions.inputactions";
         private const float TraceFrameDeltaTime = 1f / 60f;
         private const float TraceTolerance = 0.001f;
 
@@ -29,7 +29,7 @@ namespace Gley.CameraSystem.Tests.Input
             base.Setup();
             keyboard = InputSystem.AddDevice<Keyboard>();
             mouse = InputSystem.AddDevice<Mouse>();
-            actions = UnityEditor.AssetDatabase.LoadAssetAtPath<InputActionAsset>(ActionsPath);
+            actions = UnityEditor.AssetDatabase.LoadAssetAtPath<InputActionAsset>(new VehicleCameraPackageLocator().AssetPath(ActionsPath));
             builder = new InputTestProfileBuilder();
             profile = builder.CreateProfile(1f, 2f, 2f);
             body = builder.CreateBody("Vehicle");

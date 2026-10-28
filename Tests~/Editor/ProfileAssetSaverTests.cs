@@ -7,17 +7,19 @@ namespace Gley.CameraSystem.Tests.EditMode
 {
     public class ProfileAssetSaverTests
     {
-        private const string PackagePath = "Assets/Gley/VehicleCameraSystem/RefusedProfileTest.asset";
+        private const string RefusedAssetName = "RefusedProfileTest.asset";
 
         private VehicleCameraAssetSaver assetSaver;
         private ProfileAssetSaver profileSaver;
         private VehicleProfile profile;
+        private string packagePath;
         private string previousFolder;
         private bool hadPreviousFolder;
 
         [SetUp]
         public void SetUp()
         {
+            packagePath = new VehicleCameraPackageLocator().AssetPath(RefusedAssetName);
             assetSaver = new VehicleCameraAssetSaver();
             profileSaver = new ProfileAssetSaver(assetSaver);
             profile = ScriptableObject.CreateInstance<VehicleProfile>();
@@ -46,12 +48,12 @@ namespace Gley.CameraSystem.Tests.EditMode
         [Test]
         public void PathInsidePackage_Refused()
         {
-            VehicleProfile savedProfile = profileSaver.CreateProfileAsset(profile, PackagePath);
+            VehicleProfile savedProfile = profileSaver.CreateProfileAsset(profile, packagePath);
 
             Assert.IsNull(savedProfile);
             Assert.IsFalse(AssetDatabase.Contains(profile));
-            Assert.IsNull(AssetDatabase.LoadAssetAtPath<VehicleProfile>(PackagePath));
-            Assert.IsTrue(assetSaver.IsInsidePackageFolder(PackagePath));
+            Assert.IsNull(AssetDatabase.LoadAssetAtPath<VehicleProfile>(packagePath));
+            Assert.IsTrue(assetSaver.IsInsidePackageFolder(packagePath));
             Assert.IsFalse(assetSaver.IsInsidePackageFolder(VehicleCameraAssetSaver.ProfilesFolder + "/Allowed.asset"));
         }
 

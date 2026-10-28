@@ -75,7 +75,7 @@ namespace Gley.CameraSystem.Tests.EditMode
         [Test]
         public void IsDefaultPresetPath_InsideDefaultPresetsFolder_True()
         {
-            Assert.IsTrue(duplicator.IsDefaultPresetPath(DefaultPresetBuilder.DrivingAssetPath));
+            Assert.IsTrue(duplicator.IsDefaultPresetPath(builder.DrivingAssetPath));
             Assert.IsFalse(duplicator.IsDefaultPresetPath(DefaultPresetDuplicator.PresetsFolder + "/Driving.asset"));
             Assert.IsFalse(duplicator.IsDefaultPresetPath(string.Empty));
         }
@@ -96,7 +96,7 @@ namespace Gley.CameraSystem.Tests.EditMode
             Assert.AreNotSame(source, duplicate);
             Assert.AreEqual(CameraViewType.Driving, duplicate.ViewType);
             Assert.IsFalse(assetSaver.IsInsidePackageFolder(AssetDatabase.GetAssetPath(duplicate)));
-            Assert.IsNull(duplicator.CreateDuplicate(source, DefaultPresetBuilder.FolderPath + "/Refused.asset"));
+            Assert.IsNull(duplicator.CreateDuplicate(source, builder.FolderPath + "/Refused.asset"));
         }
 
         private void EnsureFolder(string folder)

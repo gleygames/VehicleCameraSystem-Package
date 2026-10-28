@@ -7,7 +7,7 @@ namespace Gley.CameraSystem.Input
 {
     public class VehicleCameraInput : MonoBehaviour
     {
-        private const string ShippedActionsPath = "Assets/Gley/VehicleCameraSystem/Input/VehicleCameraInputActions.inputactions";
+        private const string ShippedActionsPath = "Input/VehicleCameraInputActions.inputactions";
         private const string CameraMapName = "Camera";
 
         private readonly TouchGestureRecognizer gestures = new TouchGestureRecognizer();
@@ -536,7 +536,7 @@ namespace Gley.CameraSystem.Input
 #if UNITY_EDITOR
             if (actions == null)
             {
-                actions = UnityEditor.AssetDatabase.LoadAssetAtPath<InputActionAsset>(ShippedActionsPath);
+                actions = UnityEditor.AssetDatabase.LoadAssetAtPath<InputActionAsset>(new VehicleCameraPackageLocator().AssetPath(ShippedActionsPath));
             }
 #endif
         }

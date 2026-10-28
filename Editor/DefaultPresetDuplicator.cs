@@ -8,10 +8,12 @@ namespace Gley.CameraSystem.Editor
         public const string PresetsFolder = "Assets/VehicleCameraSystemData/Presets";
 
         private readonly VehicleCameraAssetSaver assetSaver;
+        private readonly DefaultPresetBuilder presetBuilder;
 
         public DefaultPresetDuplicator(VehicleCameraAssetSaver saver)
         {
             assetSaver = saver;
+            presetBuilder = new DefaultPresetBuilder();
         }
 
         public bool IsDefaultPresetPath(string assetPath)
@@ -22,7 +24,7 @@ namespace Gley.CameraSystem.Editor
             }
 
             string normalizedPath = assetPath.Replace('\\', '/');
-            return normalizedPath.StartsWith(DefaultPresetBuilder.FolderPath + "/", StringComparison.OrdinalIgnoreCase);
+            return normalizedPath.StartsWith(presetBuilder.FolderPath + "/", StringComparison.OrdinalIgnoreCase);
         }
 
         public bool IsDefaultPreset(CameraViewPreset preset)

@@ -9,7 +9,7 @@ namespace Gley.CameraSystem.Input.Editor
 {
     public class InputCompanionInstaller : IInputCompanionInstaller
     {
-        private const string ButtonsPrefabPath = "Assets/Gley/VehicleCameraSystem/Input/Prefabs/CameraButtons.prefab";
+        private const string ButtonsPrefabPath = "Input/Prefabs/CameraButtons.prefab";
 
         public void InstallInputCompanion(GameObject cameraObject, CameraSystemController controller)
         {
@@ -45,7 +45,7 @@ namespace Gley.CameraSystem.Input.Editor
                 }
             }
 
-            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(ButtonsPrefabPath);
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(new VehicleCameraPackageLocator().AssetPath(ButtonsPrefabPath));
             if (prefab == null)
             {
                 EditorUtility.DisplayDialog("Add Touch Buttons", "CameraButtons.prefab is missing from the input companion package.", "OK");

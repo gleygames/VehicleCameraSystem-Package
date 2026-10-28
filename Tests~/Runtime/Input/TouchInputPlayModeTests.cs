@@ -11,7 +11,7 @@ namespace Gley.CameraSystem.Tests.Input
 {
     public class TouchInputPlayModeTests : InputTestFixture
     {
-        private const string ActionsPath = "Assets/Gley/VehicleCameraSystem/Input/VehicleCameraInputActions.inputactions";
+        private const string ActionsPath = "Input/VehicleCameraInputActions.inputactions";
 
         private InputTestProfileBuilder builder;
         private Touchscreen touchscreen;
@@ -22,7 +22,7 @@ namespace Gley.CameraSystem.Tests.Input
         {
             base.Setup();
             touchscreen = InputSystem.AddDevice<Touchscreen>();
-            InputActionAsset actions = UnityEditor.AssetDatabase.LoadAssetAtPath<InputActionAsset>(ActionsPath);
+            InputActionAsset actions = UnityEditor.AssetDatabase.LoadAssetAtPath<InputActionAsset>(new VehicleCameraPackageLocator().AssetPath(ActionsPath));
             builder = new InputTestProfileBuilder();
             VehicleProfile profile = builder.CreateProfile(1f, 2f, 2f);
             Transform body = builder.CreateBody("Vehicle");

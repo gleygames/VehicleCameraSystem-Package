@@ -5,11 +5,25 @@ namespace Gley.CameraSystem.Editor
 {
     public class DefaultPresetBuilder
     {
-        public const string FolderPath = "Assets/Gley/VehicleCameraSystem/DefaultPresets";
-        public const string DrivingAssetPath = FolderPath + "/Driving.asset";
-        public const string PresentationAssetPath = FolderPath + "/Presentation.asset";
-        public const string InteriorAssetPath = FolderPath + "/Interior.asset";
-        public const string FixedAssetPath = FolderPath + "/Fixed.asset";
+        private const string FolderName = "DefaultPresets";
+
+        private readonly string packageRoot;
+
+        public string FolderPath { get; }
+        public string DrivingAssetPath { get; }
+        public string PresentationAssetPath { get; }
+        public string InteriorAssetPath { get; }
+        public string FixedAssetPath { get; }
+
+        public DefaultPresetBuilder()
+        {
+            packageRoot = new VehicleCameraPackageLocator().PackageRoot();
+            FolderPath = packageRoot + "/" + FolderName;
+            DrivingAssetPath = FolderPath + "/Driving.asset";
+            PresentationAssetPath = FolderPath + "/Presentation.asset";
+            InteriorAssetPath = FolderPath + "/Interior.asset";
+            FixedAssetPath = FolderPath + "/Fixed.asset";
+        }
 
         public void RebuildDefaultPresets()
         {
@@ -41,7 +55,7 @@ namespace Gley.CameraSystem.Editor
             {
                 if (!AssetDatabase.IsValidFolder(FolderPath))
                 {
-                    AssetDatabase.CreateFolder("Assets/Gley/VehicleCameraSystem", "DefaultPresets");
+                    AssetDatabase.CreateFolder(packageRoot, FolderName);
                 }
 
                 preset = ScriptableObject.CreateInstance<CameraViewPreset>();

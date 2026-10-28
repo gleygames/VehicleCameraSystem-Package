@@ -9,7 +9,7 @@ namespace Gley.CameraSystem.Tests.Input
 {
     public class CameraCommandButtonTests : InputTestFixture
     {
-        private const string ActionsPath = "Assets/Gley/VehicleCameraSystem/Input/VehicleCameraInputActions.inputactions";
+        private const string ActionsPath = "Input/VehicleCameraInputActions.inputactions";
 
         private InputTestProfileBuilder builder;
         private CameraSystemController controller;
@@ -20,7 +20,7 @@ namespace Gley.CameraSystem.Tests.Input
         public override void Setup()
         {
             base.Setup();
-            InputActionAsset actions = UnityEditor.AssetDatabase.LoadAssetAtPath<InputActionAsset>(ActionsPath);
+            InputActionAsset actions = UnityEditor.AssetDatabase.LoadAssetAtPath<InputActionAsset>(new VehicleCameraPackageLocator().AssetPath(ActionsPath));
             builder = new InputTestProfileBuilder();
             VehicleProfile profile = builder.CreateProfile(1f, 2f, 2f);
             Transform body = builder.CreateBody("Vehicle");
