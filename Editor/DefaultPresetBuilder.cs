@@ -11,12 +11,6 @@ namespace Gley.CameraSystem.Editor
         public const string InteriorAssetPath = FolderPath + "/Interior.asset";
         public const string FixedAssetPath = FolderPath + "/Fixed.asset";
 
-        [MenuItem("Tools/Gley/Vehicle Camera System/Internal/Rebuild Default Presets")]
-        private static void RebuildDefaultPresetsMenuItem()
-        {
-            new DefaultPresetBuilder().RebuildDefaultPresets();
-        }
-
         public void RebuildDefaultPresets()
         {
             CreateOrUpdatePreset(DrivingAssetPath, CameraViewType.Driving);
