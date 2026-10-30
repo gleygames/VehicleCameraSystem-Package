@@ -72,7 +72,7 @@ namespace Gley.CameraSystem.Input.Editor
                 Undo.AddComponent<GraphicRaycaster>(canvas.gameObject);
             }
 
-            EventSystem eventSystem = Object.FindFirstObjectByType<EventSystem>();
+            EventSystem eventSystem = Object.FindAnyObjectByType<EventSystem>();
             if (eventSystem != null)
             {
                 if (eventSystem.GetComponent<InputSystemUIInputModule>() == null)

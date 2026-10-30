@@ -17,7 +17,7 @@ namespace Gley.CameraSystem.Input.Dev
         {
             yield return null;
 
-            controller = Object.FindFirstObjectByType<CameraSystemController>();
+            controller = Object.FindAnyObjectByType<CameraSystemController>();
             if (controller == null || buttonsPrefab == null || actions == null)
             {
                 Debug.LogError("Touch buttons review setup is missing the controller, buttons prefab or input actions.", this);

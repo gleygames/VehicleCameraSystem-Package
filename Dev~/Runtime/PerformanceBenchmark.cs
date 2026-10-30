@@ -212,7 +212,11 @@ namespace Gley.CameraSystem.Dev
 
         private void WarmColliderWrappers()
         {
+#if UNITY_6000_4_OR_NEWER
+            Collider[] colliders = FindObjectsByType<Collider>(FindObjectsInactive.Include);
+#else
             Collider[] colliders = FindObjectsByType<Collider>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+#endif
             for (int index = 0; index < colliders.Length; index++)
             {
                 warmedColliders.Add(colliders[index]);

@@ -63,7 +63,11 @@ namespace Gley.CameraSystem.Tests.PlayMode
         {
             Rigidbody body = root.gameObject.AddComponent<Rigidbody>();
             body.useGravity = false;
+#if UNITY_6000_0_OR_NEWER
+            body.linearVelocity = Vector3.zero;
+#else
             body.velocity = Vector3.zero;
+#endif
             body.angularVelocity = Vector3.zero;
             Assert.IsFalse(target.HasSuppliedAcceleration);
             Assert.AreEqual(CameraCommandResult.Accepted, controller.Activate());

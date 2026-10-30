@@ -126,7 +126,11 @@ namespace Gley.CameraSystem.Editor
 
         public Canvas FindCanvas()
         {
+#if UNITY_6000_4_OR_NEWER
+            Canvas[] canvases = Object.FindObjectsByType<Canvas>(FindObjectsInactive.Exclude);
+#else
             Canvas[] canvases = Object.FindObjectsByType<Canvas>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+#endif
             for (int index = 0; index < canvases.Length; index++)
             {
                 if (canvases[index].isRootCanvas && canvases[index].gameObject.scene.IsValid())
@@ -140,7 +144,11 @@ namespace Gley.CameraSystem.Editor
 
         public VehicleCameraTarget FindExistingTarget(Transform vehicleRoot)
         {
+#if UNITY_6000_4_OR_NEWER
+            VehicleCameraTarget[] targets = Object.FindObjectsByType<VehicleCameraTarget>(FindObjectsInactive.Include);
+#else
             VehicleCameraTarget[] targets = Object.FindObjectsByType<VehicleCameraTarget>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+#endif
             for (int index = 0; index < targets.Length; index++)
             {
                 VehicleCameraTarget candidate = targets[index];

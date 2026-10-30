@@ -29,7 +29,11 @@ namespace Gley.CameraSystem.Tests.PlayMode
         {
             Rigidbody body = rootObject.AddComponent<Rigidbody>();
             body.useGravity = false;
+#if UNITY_6000_0_OR_NEWER
+            body.linearVelocity = Vector3.right * 10f;
+#else
             body.velocity = Vector3.right * 10f;
+#endif
             body.angularVelocity = Vector3.up;
             estimator.Configure(target, Vector3.forward * 2f);
 

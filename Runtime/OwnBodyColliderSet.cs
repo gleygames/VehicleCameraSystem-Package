@@ -1,12 +1,17 @@
 using System.Collections.Generic;
 using UnityEngine;
+#if UNITY_6000_4_OR_NEWER
+using ColliderId = UnityEngine.EntityId;
+#else
+using ColliderId = System.Int32;
+#endif
 
 namespace Gley.CameraSystem
 {
     public class OwnBodyColliderSet
     {
         private readonly List<Collider> bodyColliders = new List<Collider>();
-        private readonly List<int> colliderIds = new List<int>();
+        private readonly List<ColliderId> colliderIds = new List<ColliderId>();
 
         public int Count => colliderIds.Count;
 
@@ -30,7 +35,7 @@ namespace Gley.CameraSystem
                 body.GetComponentsInChildren(true, bodyColliders);
                 for (int index = 0; index < bodyColliders.Count; index++)
                 {
-                    colliderIds.Add(bodyColliders[index].GetInstanceID());
+                    colliderIds.Add(GetColliderId(bodyColliders[index]));
                 }
             }
 
@@ -45,19 +50,19 @@ namespace Gley.CameraSystem
                 return false;
             }
 
-            int instanceId = candidate.GetInstanceID();
+            ColliderId instanceId = GetColliderId(candidate);
             int low = 0;
             int high = colliderIds.Count - 1;
             while (low <= high)
             {
                 int middle = low + (high - low) / 2;
-                int middleId = colliderIds[middle];
-                if (middleId == instanceId)
+                int comparison = colliderIds[middle].CompareTo(instanceId);
+                if (comparison == 0)
                 {
                     return true;
                 }
 
-                if (middleId < instanceId)
+                if (comparison < 0)
                 {
                     low = middle + 1;
                 }
@@ -74,6 +79,15 @@ namespace Gley.CameraSystem
         {
             colliderIds.Clear();
             bodyColliders.Clear();
+        }
+
+        private ColliderId GetColliderId(Collider collider)
+        {
+#if UNITY_6000_4_OR_NEWER
+            return collider.GetEntityId();
+#else
+            return collider.GetInstanceID();
+#endif
         }
     }
 }

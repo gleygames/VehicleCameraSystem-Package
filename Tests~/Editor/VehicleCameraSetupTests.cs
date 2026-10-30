@@ -94,7 +94,11 @@ namespace Gley.CameraSystem.Tests.EditMode
             Assert.AreSame(first.Target, second.Target);
             Assert.AreSame(first.Controller, second.Controller);
 
+#if UNITY_6000_4_OR_NEWER
+            VehicleCameraTarget[] targets = Object.FindObjectsByType<VehicleCameraTarget>(FindObjectsInactive.Include);
+#else
             VehicleCameraTarget[] targets = Object.FindObjectsByType<VehicleCameraTarget>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+#endif
             int matchingTargets = 0;
             for (int index = 0; index < targets.Length; index++)
             {
