@@ -1,77 +1,55 @@
-# Asset Store Package License Agreement
+# License
 
-Copyright (c) 2026
-All rights reserved.
+Copyright (c) Gley Games. All rights reserved.
 
-This license applies to all source code, binaries, assets, documentation, and any other content included in this package (the "Package").
-
----
-
-## 1. Grant of License
-
-Subject to the terms of this agreement and the Unity Asset Store End User License Agreement ("Asset Store EULA"), the Package owner grants you a **non-exclusive, non-transferable, non-sublicensable license** to use the Package **solely as permitted under the Asset Store EULA**.
-
-You may:
-- Use the Package in personal or commercial Unity projects.
-- Modify the Package for use within your own projects.
-- Distribute the Package **only as embedded or integrated content** in a larger Unity application, in accordance with the Asset Store EULA.
-
----
-
-## 2. Restrictions
-
-The following actions are **strictly prohibited** unless you have obtained **explicit written permission** from the Package owner:
-
-- Distributing, sharing, sublicensing, renting, leasing, lending, or otherwise making the Package available to any third party, **in any form**.
-- Redistributing the Package, whether free or paid, as a standalone product or as part of another asset, framework, SDK, template, or tool.
-- Uploading the Package or any derivative work to the Unity Asset Store or any other marketplace.
-- Publishing the Package or any portion of it in public or private repositories, including but not limited to GitHub, GitLab, Bitbucket, or similar platforms.
-- Selling, licensing, or monetizing the Package or any portion of it outside of an end-user application.
-
----
-
-## 3. Ownership
-
-The Package is licensed, not sold. All intellectual property rights, including but not limited to copyright and related rights, remain the exclusive property of the Package owner.
-
-Any modifications, extensions, or derivative works created by you remain subject to this license and do **not** grant you ownership of the original Package or the right to redistribute it.
-
----
-
-## 4. Asset Store Standard License Clause
-
-This Package is licensed under the **Unity Asset Store Standard End User License Agreement** (EULA).
-
-In the event of any conflict between this license file and the Asset Store EULA, **the Asset Store EULA shall prevail**.
-
-You may review the Asset Store EULA here:
+This package, including all source code, assets, and documentation (the "Package"),
+is distributed through the Unity Asset Store and is licensed under the
+**Unity Asset Store End User License Agreement** (the "EULA"):
 https://unity.com/legal/as-terms
 
----
+The EULA is the governing agreement. This file summarizes it for convenience;
+if anything here conflicts with the EULA, the EULA prevails.
 
-## 5. Termination
+## You may
 
-Any breach of this license agreement automatically terminates your rights to use the Package. Upon termination, you must immediately cease all use of the Package and delete all copies in your possession or control.
+- Use the Package in any number of personal or commercial projects, including
+  games and applications you sell.
+- Modify the Package for use in those projects.
+- Distribute the Package as part of a built, compiled end product (for example
+  a game or app), where it cannot be extracted and reused as a standalone asset.
+- Keep the Package in your project's version control, including private
+  repositories shared with your team, provided each team member who uses it
+  holds a license where the EULA requires one.
 
----
+## You may not
 
-## 6. Disclaimer of Warranty
+- Resell, redistribute, sublicense, or share the Package, or any modified
+  version of it, as source or as an asset, whether free or paid.
+- Include the Package in another asset, template, tool, framework, or SDK.
+- Publish the Package's source in a public repository or any place where
+  people who have not obtained it from the Asset Store can access it.
+- Upload, post, link to, or otherwise share the Package, or any part or
+  modified version of it, on asset-sharing, "free download", leak, warez,
+  torrent, or file-hosting sites, or in forums, Discord servers, Telegram
+  channels, or similar communities.
+- Remove or alter this license or the copyright notices.
 
-The Package is provided "AS IS", without warranty of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, and non-infringement.
+## Unauthorized copies
 
----
+The only authorized source of this Package is the Unity Asset Store.
+Copies obtained from any other source, including sites that redistribute
+Asset Store content without the publisher's permission, are not licensed.
+No rights of any kind are granted to anyone using such a copy, including the
+right to use it in any project, personal or commercial, released or unreleased.
 
-## 7. Limitation of Liability
+Gley Games reserves the right to pursue removal of unauthorized copies and
+any other remedies available under applicable law.
 
-In no event shall the Package owner be liable for any damages arising from the use or inability to use the Package, including but not limited to loss of data, loss of profits, or business interruption.
+## No warranty
 
----
+The Package is provided "as is", without warranty of any kind. To the extent
+permitted by law, Gley Games is not liable for any damages arising from its use.
 
-## 8. Written Permission
+## Contact
 
-Any exception to the terms of this license must be granted **explicitly and in writing** by the Package owner. Verbal agreements or implied permissions are not valid.
-
----
-
-By using this Package, you acknowledge that you have read, understood, and agreed to the terms of this license and the Unity Asset Store EULA.
-
+For permissions beyond these terms, contact gleygames@hotmail.com.
