@@ -5,8 +5,6 @@ namespace Gley.CameraSystem.Editor
 {
     public class DefaultPresetDuplicator
     {
-        public const string PresetsFolder = "Assets/VehicleCameraSystemData/Presets";
-
         private readonly VehicleCameraAssetSaver assetSaver;
         private readonly DefaultPresetBuilder presetBuilder;
 
@@ -39,7 +37,7 @@ namespace Gley.CameraSystem.Editor
 
         public string RequestDuplicatePath(CameraViewPreset preset)
         {
-            return assetSaver.RequestSavePath("Duplicate Camera View Preset", preset.name, PresetsFolder);
+            return assetSaver.RequestSavePath("Duplicate Camera View Preset", preset.name, assetSaver.DataPaths.PresetsFolder);
         }
 
         public CameraViewPreset CreateDuplicate(CameraViewPreset source, string path)

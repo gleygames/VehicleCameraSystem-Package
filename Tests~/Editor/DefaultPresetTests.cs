@@ -7,15 +7,14 @@ namespace Gley.CameraSystem.Tests.EditMode
 {
     public class DefaultPresetTests
     {
-        private const string SourcePresetPath = DefaultPresetDuplicator.PresetsFolder + "/DuplicateTestSource.asset";
-        private const string DuplicatePresetPath = DefaultPresetDuplicator.PresetsFolder + "/DuplicateTestCopy.asset";
-
         private DefaultPresetBuilder builder;
         private DefaultPresetDuplicator duplicator;
         private VehicleCameraAssetSaver assetSaver;
         private CameraViewPreset built;
         private CameraViewPreset expected;
         private CameraViewPreset source;
+        private string sourcePresetPath;
+        private string duplicatePresetPath;
 
         [SetUp]
         public void SetUp()
@@ -23,6 +22,8 @@ namespace Gley.CameraSystem.Tests.EditMode
             builder = new DefaultPresetBuilder();
             assetSaver = new VehicleCameraAssetSaver();
             duplicator = new DefaultPresetDuplicator(assetSaver);
+            sourcePresetPath = assetSaver.DataPaths.PresetsFolder + "/DuplicateTestSource.asset";
+            duplicatePresetPath = assetSaver.DataPaths.PresetsFolder + "/DuplicateTestCopy.asset";
         }
 
         [TearDown]
@@ -38,14 +39,14 @@ namespace Gley.CameraSystem.Tests.EditMode
                 Object.DestroyImmediate(expected);
             }
 
-            if (AssetDatabase.LoadAssetAtPath<CameraViewPreset>(DuplicatePresetPath) != null)
+            if (AssetDatabase.LoadAssetAtPath<CameraViewPreset>(duplicatePresetPath) != null)
             {
-                AssetDatabase.DeleteAsset(DuplicatePresetPath);
+                AssetDatabase.DeleteAsset(duplicatePresetPath);
             }
 
-            if (AssetDatabase.LoadAssetAtPath<CameraViewPreset>(SourcePresetPath) != null)
+            if (AssetDatabase.LoadAssetAtPath<CameraViewPreset>(sourcePresetPath) != null)
             {
-                AssetDatabase.DeleteAsset(SourcePresetPath);
+                AssetDatabase.DeleteAsset(sourcePresetPath);
             }
         }
 
@@ -76,21 +77,20 @@ namespace Gley.CameraSystem.Tests.EditMode
         public void IsDefaultPresetPath_InsideDefaultPresetsFolder_True()
         {
             Assert.IsTrue(duplicator.IsDefaultPresetPath(builder.DrivingAssetPath));
-            Assert.IsFalse(duplicator.IsDefaultPresetPath(DefaultPresetDuplicator.PresetsFolder + "/Driving.asset"));
+            Assert.IsFalse(duplicator.IsDefaultPresetPath(assetSaver.DataPaths.PresetsFolder + "/Driving.asset"));
             Assert.IsFalse(duplicator.IsDefaultPresetPath(string.Empty));
         }
 
         [Test]
         public void DuplicateToEdit_CopyOutsidePackage()
         {
-            EnsureFolder("Assets/VehicleCameraSystemData");
-            EnsureFolder(DefaultPresetDuplicator.PresetsFolder);
+            EnsureFolder(assetSaver.DataPaths.PresetsFolder);
 
             source = ScriptableObject.CreateInstance<CameraViewPreset>();
             source.Configure(CameraViewType.Driving);
-            AssetDatabase.CreateAsset(source, SourcePresetPath);
+            AssetDatabase.CreateAsset(source, sourcePresetPath);
 
-            CameraViewPreset duplicate = duplicator.CreateDuplicate(source, DuplicatePresetPath);
+            CameraViewPreset duplicate = duplicator.CreateDuplicate(source, duplicatePresetPath);
 
             Assert.IsNotNull(duplicate);
             Assert.AreNotSame(source, duplicate);

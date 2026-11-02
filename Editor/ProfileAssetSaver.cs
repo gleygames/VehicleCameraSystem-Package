@@ -13,7 +13,7 @@ namespace Gley.CameraSystem.Editor
 
         public VehicleProfile SaveNewProfile(VehicleProfile profile, string defaultName)
         {
-            string path = assetSaver.RequestSavePath("Save Vehicle Profile", defaultName, VehicleCameraAssetSaver.ProfilesFolder);
+            string path = assetSaver.RequestSavePath("Save Vehicle Profile", defaultName, assetSaver.DataPaths.ProfilesFolder);
             if (string.IsNullOrEmpty(path))
             {
                 return null;

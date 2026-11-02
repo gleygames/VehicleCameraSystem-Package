@@ -360,7 +360,7 @@ namespace Gley.CameraSystem.Editor
                 return;
             }
 
-            string path = assetSaver.RequestSavePath("Save Pair Override", overrideAuthoring.GetDefaultAssetName(frontProfile, rearProfile), VehicleCameraAssetSaver.ProfilesFolder);
+            string path = assetSaver.RequestSavePath("Save Pair Override", overrideAuthoring.GetDefaultAssetName(frontProfile, rearProfile), assetSaver.DataPaths.ProfilesFolder);
             if (overrideAuthoring.SaveOverride(created, path, assetSaver) == null)
             {
                 Object.DestroyImmediate(created);

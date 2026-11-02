@@ -7,9 +7,7 @@ namespace Gley.CameraSystem.Editor.Dev
     public class HandleStressProfileBuilder
     {
         private const string MenuPath = "Tools/GleyDev/CameraSystem/Create Handle Stress Profile";
-        private const string DataFolder = "Assets/VehicleCameraSystemData";
-        private const string ProfileFolder = "Assets/VehicleCameraSystemData/Profiles";
-        private const string ProfilePath = "Assets/VehicleCameraSystemData/Profiles/Handle Stress Profile.asset";
+        private const string ProfileFileName = "Handle Stress Profile.asset";
         private const float HalfWidth = 2f;
         private const float BodyLength = 12f;
         private const float CornerRadius = 1.5f;
@@ -17,6 +15,15 @@ namespace Gley.CameraSystem.Editor.Dev
         private const int BodyCount = 5;
         private const int MarkersPerBody = 20;
         private const int KnotCount = 8;
+
+        private readonly string profileFolder;
+        private readonly string profilePath;
+
+        public HandleStressProfileBuilder()
+        {
+            profileFolder = new VehicleCameraSystemDataPaths().ProfilesFolder;
+            profilePath = profileFolder + "/" + ProfileFileName;
+        }
 
         [MenuItem(MenuPath)]
         private static void CreateProfile()
@@ -26,13 +33,13 @@ namespace Gley.CameraSystem.Editor.Dev
 
         public void Build()
         {
-            if (AssetDatabase.LoadAssetAtPath<VehicleProfile>(ProfilePath) != null && !EditorUtility.DisplayDialog("Handle Stress Profile", $"{ProfilePath} already exists. Replace it?", "Replace", "Cancel"))
+            if (AssetDatabase.LoadAssetAtPath<VehicleProfile>(profilePath) != null && !EditorUtility.DisplayDialog("Handle Stress Profile", $"{profilePath} already exists. Replace it?", "Replace", "Cancel"))
             {
                 return;
             }
 
             CreateFolders();
-            AssetDatabase.DeleteAsset(ProfilePath);
+            AssetDatabase.DeleteAsset(profilePath);
             VehicleProfile profile = ScriptableObject.CreateInstance<VehicleProfile>();
             profile.EnsureProfileId();
             VehicleOrbit orbit = profile.AddOrbit("Presentation");
@@ -41,7 +48,7 @@ namespace Gley.CameraSystem.Editor.Dev
             orbit.ConfigureBaseHeight(1.5f);
             orbit.ConfigureOffsetRanges(-1f, 4f, -4f, 1f);
             AddMarkers(profile, orbit, halfLength);
-            AssetDatabase.CreateAsset(profile, ProfilePath);
+            AssetDatabase.CreateAsset(profile, profilePath);
             AssetDatabase.SaveAssets();
             Selection.activeObject = profile;
             EditorGUIUtility.PingObject(profile);
@@ -49,14 +56,18 @@ namespace Gley.CameraSystem.Editor.Dev
 
         private void CreateFolders()
         {
-            if (!AssetDatabase.IsValidFolder(DataFolder))
-            {
-                AssetDatabase.CreateFolder("Assets", "VehicleCameraSystemData");
-            }
+            string[] parts = profileFolder.Split('/');
+            string currentFolder = parts[0];
 
-            if (!AssetDatabase.IsValidFolder(ProfileFolder))
+            for (int index = 1; index < parts.Length; index++)
             {
-                AssetDatabase.CreateFolder(DataFolder, "Profiles");
+                string nextFolder = currentFolder + "/" + parts[index];
+                if (!AssetDatabase.IsValidFolder(nextFolder))
+                {
+                    AssetDatabase.CreateFolder(currentFolder, parts[index]);
+                }
+
+                currentFolder = nextFolder;
             }
         }
 

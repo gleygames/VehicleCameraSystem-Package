@@ -14,7 +14,6 @@ namespace Gley.CameraSystem.Tests.EditMode
         private VehicleProfile profile;
         private string packagePath;
         private string previousFolder;
-        private bool hadPreviousFolder;
 
         [SetUp]
         public void SetUp()
@@ -23,21 +22,13 @@ namespace Gley.CameraSystem.Tests.EditMode
             assetSaver = new VehicleCameraAssetSaver();
             profileSaver = new ProfileAssetSaver(assetSaver);
             profile = ScriptableObject.CreateInstance<VehicleProfile>();
-            hadPreviousFolder = EditorPrefs.HasKey(VehicleCameraAssetSaver.LastFolderKey);
-            previousFolder = EditorPrefs.GetString(VehicleCameraAssetSaver.LastFolderKey, string.Empty);
+            previousFolder = VehicleCameraUserSettings.instance.LastSaveFolder;
         }
 
         [TearDown]
         public void TearDown()
         {
-            if (hadPreviousFolder)
-            {
-                EditorPrefs.SetString(VehicleCameraAssetSaver.LastFolderKey, previousFolder);
-            }
-            else
-            {
-                EditorPrefs.DeleteKey(VehicleCameraAssetSaver.LastFolderKey);
-            }
+            VehicleCameraUserSettings.instance.LastSaveFolder = previousFolder;
 
             if (profile != null && !AssetDatabase.Contains(profile))
             {
@@ -54,18 +45,17 @@ namespace Gley.CameraSystem.Tests.EditMode
             Assert.IsFalse(AssetDatabase.Contains(profile));
             Assert.IsNull(AssetDatabase.LoadAssetAtPath<VehicleProfile>(packagePath));
             Assert.IsTrue(assetSaver.IsInsidePackageFolder(packagePath));
-            Assert.IsFalse(assetSaver.IsInsidePackageFolder(VehicleCameraAssetSaver.ProfilesFolder + "/Allowed.asset"));
+            Assert.IsFalse(assetSaver.IsInsidePackageFolder(assetSaver.DataPaths.ProfilesFolder + "/Allowed.asset"));
         }
 
         [Test]
         public void DefaultFolder_UsedWhenNoPreference()
         {
-            EditorPrefs.DeleteKey(VehicleCameraAssetSaver.LastFolderKey);
+            VehicleCameraUserSettings.instance.LastSaveFolder = string.Empty;
 
-            string startFolder = assetSaver.GetStartFolder(VehicleCameraAssetSaver.ProfilesFolder);
+            string startFolder = assetSaver.GetStartFolder(assetSaver.DataPaths.ProfilesFolder);
 
-            Assert.AreEqual("Assets/VehicleCameraSystemData/Profiles", startFolder);
-            Assert.IsTrue(AssetDatabase.IsValidFolder(startFolder));
+            Assert.AreEqual("Assets/GleyData/VehicleCameraSystem/Profiles", startFolder);
         }
     }
 }

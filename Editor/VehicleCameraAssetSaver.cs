@@ -5,36 +5,44 @@ namespace Gley.CameraSystem.Editor
 {
     public class VehicleCameraAssetSaver
     {
-        public const string ProfilesFolder = "Assets/VehicleCameraSystemData/Profiles";
-        public const string LastFolderKey = "Gley.VehicleCameraSystem.LastSaveFolder";
-
         private readonly string packageFolder;
+        private readonly DataFolderPreparer folderPreparer;
+
+        public VehicleCameraSystemDataPaths DataPaths { get; }
 
         public VehicleCameraAssetSaver()
         {
             packageFolder = new VehicleCameraPackageLocator().PackageRoot();
+            folderPreparer = new DataFolderPreparer();
+            DataPaths = new VehicleCameraSystemDataPaths();
         }
 
         public string RequestSavePath(string title, string defaultName, string suggestedFolder)
         {
-            string startFolder = GetStartFolder(suggestedFolder);
-
             while (true)
             {
+                string startFolder = GetStartFolder(suggestedFolder);
+                if (startFolder == suggestedFolder)
+                {
+                    folderPreparer.Prepare(suggestedFolder);
+                }
+
                 string path = EditorUtility.SaveFilePanelInProject(title, defaultName, "asset", "Choose where to save the asset.", startFolder);
                 if (string.IsNullOrEmpty(path))
                 {
+                    folderPreparer.Release(null);
                     return null;
                 }
 
                 if (!IsInsidePackageFolder(path))
                 {
-                    EditorPrefs.SetString(LastFolderKey, GetFolder(path));
+                    folderPreparer.Release(path);
+                    VehicleCameraUserSettings.instance.LastSaveFolder = GetFolder(path);
                     return path;
                 }
 
+                folderPreparer.Release(null);
                 EditorUtility.DisplayDialog("Choose another folder", "Assets cannot be saved inside the Vehicle Camera System package folder, because package updates overwrite that folder. Choose a folder outside it.", "OK");
-                startFolder = GetStartFolder(suggestedFolder);
             }
         }
 
@@ -51,31 +59,13 @@ namespace Gley.CameraSystem.Editor
 
         public string GetStartFolder(string suggestedFolder)
         {
-            string lastFolder = EditorPrefs.GetString(LastFolderKey, string.Empty);
+            string lastFolder = VehicleCameraUserSettings.instance.LastSaveFolder;
             if (!string.IsNullOrEmpty(lastFolder) && AssetDatabase.IsValidFolder(lastFolder) && !IsInsidePackageFolder(lastFolder))
             {
                 return lastFolder;
             }
 
-            CreateFolder(suggestedFolder);
             return suggestedFolder;
-        }
-
-        private void CreateFolder(string folder)
-        {
-            string[] parts = folder.Split('/');
-            string currentFolder = parts[0];
-
-            for (int index = 1; index < parts.Length; index++)
-            {
-                string nextFolder = currentFolder + "/" + parts[index];
-                if (!AssetDatabase.IsValidFolder(nextFolder))
-                {
-                    AssetDatabase.CreateFolder(currentFolder, parts[index]);
-                }
-
-                currentFolder = nextFolder;
-            }
         }
 
         private string GetFolder(string assetPath)

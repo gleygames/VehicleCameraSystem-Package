@@ -13,6 +13,7 @@ namespace Gley.CameraSystem.Tests.EditMode
         private VehicleCameraSetup setup;
         private GeneratorPresets presets;
         private string createdProfilePath;
+        private string profilesFolder;
 
         [SetUp]
         public void SetUp()
@@ -22,8 +23,8 @@ namespace Gley.CameraSystem.Tests.EditMode
             ProfileGenerator generator = new ProfileGenerator(new ProfileGenerationSettings());
             setup = new VehicleCameraSetup(generator, profileSaver, assetSaver);
             presets = new GeneratorPresets(CreatePreset(CameraViewType.Driving), CreatePreset(CameraViewType.Presentation), CreatePreset(CameraViewType.Interior), CreatePreset(CameraViewType.Fixed));
-            EnsureFolder("Assets/VehicleCameraSystemData");
-            EnsureFolder("Assets/VehicleCameraSystemData/Profiles");
+            profilesFolder = assetSaver.DataPaths.ProfilesFolder;
+            EnsureFolder(profilesFolder);
         }
 
         [TearDown]
@@ -53,7 +54,7 @@ namespace Gley.CameraSystem.Tests.EditMode
         {
             Transform vehicle = CreateBoxVehicle("Truck");
             Camera camera = CreateCamera();
-            createdProfilePath = "Assets/VehicleCameraSystemData/Profiles/SetupTestProfile.asset";
+            createdProfilePath = profilesFolder + "/SetupTestProfile.asset";
 
             VehicleCameraSetupResult result = setup.Run(vehicle, camera, presets, new ProfileGenerationSettings(), createdProfilePath, false);
             RegisterTarget(result);
@@ -79,7 +80,7 @@ namespace Gley.CameraSystem.Tests.EditMode
         {
             Transform vehicle = CreateBoxVehicle("Truck");
             Camera camera = CreateCamera();
-            createdProfilePath = "Assets/VehicleCameraSystemData/Profiles/SetupTestProfileTwice.asset";
+            createdProfilePath = profilesFolder + "/SetupTestProfileTwice.asset";
 
             VehicleCameraSetupResult first = setup.Run(vehicle, camera, presets, new ProfileGenerationSettings(), createdProfilePath, false);
             RegisterTarget(first);
@@ -126,7 +127,7 @@ namespace Gley.CameraSystem.Tests.EditMode
             }
 
             Camera camera = CreateCamera();
-            createdProfilePath = "Assets/VehicleCameraSystemData/Profiles/SetupTestProfileUnchanged.asset";
+            createdProfilePath = profilesFolder + "/SetupTestProfileUnchanged.asset";
 
             VehicleCameraSetupResult result = setup.Run(vehicle, camera, presets, new ProfileGenerationSettings(), createdProfilePath, false);
             RegisterTarget(result);
@@ -150,7 +151,7 @@ namespace Gley.CameraSystem.Tests.EditMode
         {
             Transform vehicle = CreateBoxVehicle("Truck");
             Camera camera = CreateCamera();
-            createdProfilePath = "Assets/VehicleCameraSystemData/Profiles/SetupTestProfileUndo.asset";
+            createdProfilePath = profilesFolder + "/SetupTestProfileUndo.asset";
 
             int groupBefore = Undo.GetCurrentGroup();
             VehicleCameraSetupResult result = setup.Run(vehicle, camera, presets, new ProfileGenerationSettings(), createdProfilePath, false);

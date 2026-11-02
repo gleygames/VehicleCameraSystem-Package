@@ -91,7 +91,7 @@ namespace Gley.CameraSystem.Editor
             string savePath = null;
             if (existingTarget == null)
             {
-                savePath = assetSaver.RequestSavePath("Save Vehicle Profile", vehicleRoot.name + " Profile", VehicleCameraAssetSaver.ProfilesFolder);
+                savePath = assetSaver.RequestSavePath("Save Vehicle Profile", vehicleRoot.name + " Profile", assetSaver.DataPaths.ProfilesFolder);
                 if (string.IsNullOrEmpty(savePath))
                 {
                     return new VehicleCameraSetupResult(VehicleCameraSetupStatus.ProfileSaveCancelled);
