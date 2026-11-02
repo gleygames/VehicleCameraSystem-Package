@@ -8,7 +8,7 @@ namespace Gley.CameraSystem.Editor
         private const float SectionWidth = 7f;
         private const float SliderSize = 0.06f;
 
-        private readonly Color frontSectionColor = new Color(1f, 0.55f, 0.1f);
+        private readonly Color frontSectionColor = new Color(0.7f, 0.53f, 1f);
         private readonly Color rearSectionColor = new Color(1f, 0.3f, 0.75f);
         private readonly OrbitEditOperations operations;
         private readonly HandleDragUndo dragUndo;

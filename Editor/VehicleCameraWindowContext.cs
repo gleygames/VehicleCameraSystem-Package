@@ -6,7 +6,7 @@ namespace Gley.CameraSystem.Editor
     public class VehicleCameraWindowContext
     {
         private readonly RenameNotice renameNotice = new RenameNotice();
-        private readonly Color selectedItemColor = new Color(0.45f, 0.7f, 1f);
+        private readonly GleyColors colors = new GleyColors(EditorGUIUtility.isProSkin);
 
         public VehicleProfile Profile { get; private set; }
         public VehicleCameraValidationCollector Collector { get; }
@@ -82,7 +82,7 @@ namespace Gley.CameraSystem.Editor
             Color previousColor = GUI.backgroundColor;
             if (itemId != 0 && itemId == SelectedItemId)
             {
-                GUI.backgroundColor = selectedItemColor;
+                GUI.backgroundColor = colors.Accent;
             }
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);

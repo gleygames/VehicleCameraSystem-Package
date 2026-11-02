@@ -11,7 +11,7 @@ namespace Gley.CameraSystem.Editor
 
         private readonly Color markerColor = new Color(1f, 0.9f, 0.2f);
         private readonly Color pointOfInterestColor = new Color(0.3f, 1f, 0.45f);
-        private readonly Color selectedColor = Color.white;
+        private readonly GleyColors colors = new GleyColors(EditorGUIUtility.isProSkin);
         private readonly OrbitEditOperations operations;
         private readonly HandleDragUndo dragUndo;
         private readonly SceneHandleState state;
@@ -75,7 +75,7 @@ namespace Gley.CameraSystem.Editor
             Handles.color = color;
             if (isSelected)
             {
-                Handles.color = selectedColor;
+                Handles.color = colors.HandleSelected;
             }
 
             Vector3 firstAxis = orbit.OrientationAdjustment * Vector3.right;

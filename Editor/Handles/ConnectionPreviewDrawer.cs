@@ -15,12 +15,12 @@ namespace Gley.CameraSystem.Editor
         private const int FramingPositionCount = 8;
 
         private readonly List<Renderer> renderers = new List<Renderer>();
-        private readonly Color orbitColor = new Color(0.3f, 0.85f, 1f);
+        private readonly GleyColors colors = new GleyColors(EditorGUIUtility.isProSkin);
         private readonly Color rootCurveColor = new Color(0.6f, 0.6f, 0.6f, 0.8f);
         private readonly Color partnerCurveColor = new Color(0.85f, 0.85f, 0.4f, 0.8f);
         private readonly Color boundsColor = new Color(0.85f, 0.85f, 0.4f, 0.5f);
         private readonly Color generatedConnectorColor = new Color(1f, 0.9f, 0.2f);
-        private readonly Color overriddenConnectorColor = new Color(1f, 0.5f, 0.1f);
+        private readonly Color overriddenConnectorColor = new Color(0.7f, 0.53f, 1f);
         private readonly Color pivotColor = Color.white;
         private readonly Color rootAimColor = new Color(0.4f, 1f, 0.4f);
         private readonly Color ownerAimColor = new Color(1f, 0.4f, 1f);
@@ -102,7 +102,7 @@ namespace Gley.CameraSystem.Editor
                 return;
             }
 
-            Handles.color = orbitColor;
+            Handles.color = colors.Handle;
             Handles.DrawAAPolyLine(OrbitWidth, preview.OrbitPointCount, preview.OrbitPoints);
         }
 

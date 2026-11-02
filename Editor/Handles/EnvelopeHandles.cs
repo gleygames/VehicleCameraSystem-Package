@@ -15,7 +15,7 @@ namespace Gley.CameraSystem.Editor
         private readonly Color zoomHandleColor = new Color(0.4f, 0.75f, 1f);
         private readonly Color heightHandleColor = new Color(0.4f, 1f, 0.6f);
         private readonly Color defaultPoseColor = new Color(1f, 0.85f, 0.2f);
-        private readonly Color frontPoseColor = new Color(1f, 0.45f, 0.2f);
+        private readonly Color frontPoseColor = new Color(0.7f, 0.53f, 1f);
         private readonly OrbitEditOperations operations;
         private readonly HandleDragUndo dragUndo;
         private readonly CameraGizmoDrawer cameraGizmo = new CameraGizmoDrawer();

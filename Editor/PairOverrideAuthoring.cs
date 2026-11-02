@@ -12,8 +12,8 @@ namespace Gley.CameraSystem.Editor
 
         private readonly Vector3[] tangentLine = new Vector3[2];
         private readonly Color endpointColor = Color.white;
-        private readonly Color controlPointColor = new Color(1f, 0.6f, 0.2f);
-        private readonly Color tangentColor = new Color(1f, 0.6f, 0.2f, 0.6f);
+        private readonly Color controlPointColor = new Color(0.7f, 0.53f, 1f);
+        private readonly Color tangentColor = new Color(0.7f, 0.53f, 1f, 0.6f);
 
         public OrbitConnectorPairOverride CreateOverride(VehicleProfile frontProfile, VehicleProfile rearProfile, string orbitName)
         {

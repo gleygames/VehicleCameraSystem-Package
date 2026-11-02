@@ -13,13 +13,9 @@ namespace Gley.CameraSystem.Editor
         private const float MinimumRayPlaneDot = 0.000001f;
         private const int MinimumKnotCount = 3;
 
-        private readonly Color validCurveColor = new Color(0.3f, 0.85f, 1f);
-        private readonly Color invalidCurveColor = new Color(1f, 0.2f, 0.2f);
+        private readonly GleyColors colors = new GleyColors(EditorGUIUtility.isProSkin);
         private readonly Color anchorColor = Color.white;
-        private readonly Color selectedAnchorColor = new Color(1f, 0.85f, 0.2f);
         private readonly Color controlPointColor = new Color(0.55f, 0.9f, 1f);
-        private readonly Color insertColor = new Color(0.3f, 1f, 0.3f);
-        private readonly Color deleteColor = new Color(1f, 0.3f, 0.3f);
         private readonly OrbitEditOperations operations;
         private readonly HandleDragUndo dragUndo;
         private readonly SceneHandleState state;
@@ -43,10 +39,10 @@ namespace Gley.CameraSystem.Editor
                 return;
             }
 
-            Color curveColor = validCurveColor;
+            Color curveColor = colors.Handle;
             if (!cache.IsCurveValid)
             {
-                curveColor = invalidCurveColor;
+                curveColor = colors.HandleInvalid;
             }
 
             Handles.color = curveColor;
@@ -141,7 +137,7 @@ namespace Gley.CameraSystem.Editor
 
             if (current.type == EventType.Repaint)
             {
-                Handles.color = insertColor;
+                Handles.color = colors.HandleValid;
                 Handles.SphereHandleCap(0, insertionPoint, Quaternion.identity, HandleUtility.GetHandleSize(insertionPoint) * ButtonSize, EventType.Repaint);
                 return false;
             }
@@ -213,10 +209,10 @@ namespace Gley.CameraSystem.Editor
                 float size = HandleUtility.GetHandleSize(position) * ButtonSize;
                 int knotControlId = GUIUtility.GetControlID(FocusType.Passive);
 
-                Handles.color = deleteColor;
+                Handles.color = colors.HandleInvalid;
                 if (HandleUtility.nearestControl == knotControlId)
                 {
-                    Handles.color = selectedAnchorColor;
+                    Handles.color = colors.HandleSelected;
                 }
 
                 Handles.SphereHandleCap(knotControlId, position, Quaternion.identity, size, current.type);
@@ -258,7 +254,7 @@ namespace Gley.CameraSystem.Editor
                 Handles.color = anchorColor;
                 if (index == state.SelectedKnotIndex)
                 {
-                    Handles.color = selectedAnchorColor;
+                    Handles.color = colors.HandleSelected;
                 }
 
                 EditorGUI.BeginChangeCheck();
